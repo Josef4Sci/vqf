@@ -456,6 +456,9 @@ class PyVQF:
         # bring magnetometer measurement into 6D earth frame
         magEarth = self.quatRotate(self.getQuat6D(), mag)
 
+        # self._state.delta = -self._params.tauMag if magEarth[0] < 0 else self._params.tauMag
+        # return
+    
         if self._params.magDistRejectionEnabled:
             magNormDip = self._state.magNormDip
             magNormDip[0] = math.sqrt(magEarth.dot(magEarth))
@@ -886,8 +889,8 @@ class PyVQF:
         assert q.shape == (4,)
         return np.array([q[0], -q[1], -q[2], -q[3]], float)
 
-    @staticmethod
-    def quatApplyDelta(q: np.ndarray, delta: float) -> np.ndarray:
+#    @staticmethod
+    def quatApplyDelta(self, q: np.ndarray, delta: float) -> np.ndarray:
         r""" Applies a heading rotation by the angle delta (in rad) to a quaternion.
 
         :math:`\mathbf{q}_\mathrm{out} = \begin{bmatrix}\cos\frac{\delta}{2} & 0 & 0 &
@@ -898,8 +901,14 @@ class PyVQF:
         :return: output quaternion -- numpy array with shape (4,)
         """
         assert q.shape == (4,)
-        c = np.cos(delta/2)
-        s = np.sin(delta/2)
+
+        if False:
+            d = self._params.tauMag if delta > 0 else - self._params.tauMag
+        else:
+            d = delta/2.0
+
+        c = np.cos(d)
+        s = np.sin(d)
         w = c * q[0] - s * q[3]
         x = c * q[1] - s * q[2]
         y = c * q[2] + s * q[1]
