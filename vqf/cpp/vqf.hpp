@@ -270,6 +270,10 @@ struct VQFParams
      * Default value: 2.0
      */
     vqf_real_t magRejectionFactor;
+
+    bool useAccStep;
+    
+    bool useAccStepWhole;
 };
 
 /**
@@ -291,6 +295,8 @@ struct VQFState {
      * @brief Inclination correction quaternion \f$^{\mathcal{I}_i}_{\mathcal{E}_i}\mathbf{q}\f$.
      */
     vqf_real_t accQuat[4];
+
+    vqf_real_t step_quat[4];
     /**
      * @brief Heading difference \f$\delta\f$ between \f$\mathcal{E}_i\f$ and \f$\mathcal{E}\f$.
      *
@@ -685,6 +691,13 @@ public:
      */
     void update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_real_t mag[3]);
 
+    bool normalize3d(const vqf_real_t in[3], vqf_real_t out[3]);
+
+    void integrateEulerStep(const vqf_real_t q[4], const vqf_real_t gyr[3], vqf_real_t dt, vqf_real_t out[4]);
+
+    void update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope[3],
+         const vqf_real_t accelerometer[3], const vqf_real_t magnetometer[3], vqf_real_t dt, vqf_real_t w_acc, vqf_real_t w_mag, bool linMag, bool wholeMag, bool no_mag, vqf_real_t quat_out[4]);
+
     /**
      * @brief Performs batch update for multiple samples at once.
      *
@@ -722,6 +735,8 @@ public:
     void updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_real_t mag[], size_t N,
                      vqf_real_t out6D[], vqf_real_t out9D[], vqf_real_t outDelta[], vqf_real_t outBias[],
                      vqf_real_t outBiasSigma[], bool outRest[], bool outMagDist[]);
+
+    void setStepQuat(vqf_real_t newstate[4]);
 
     /**
      * @brief Returns the angular velocity strapdown integration quaternion
@@ -869,6 +884,8 @@ public:
      * Resetting the state is equivalent to creating a new instance of this class.
      */
     void resetState();
+
+    void cross_prod(const vqf_real_t v1[3], const vqf_real_t v2[3], vqf_real_t out[3]);
 
     /**
      * @brief Performs quaternion multiplication (\f$\mathbf{q}_\mathrm{out} = \mathbf{q}_1 \otimes \mathbf{q}_2\f$).
@@ -1062,6 +1079,8 @@ protected:
      * See #getCoeffs.
      */
     VQFCoefficients coeffs;
+
+    vqf_real_t accEarthRef[3];
 };
 
 #endif // VQF_HPP

@@ -133,30 +133,50 @@ void VQF::updateAcc(const vqf_real_t acc[3])
 
     vqf_real_t accEarth[3];
 
-    // filter acc in inertial frame
-    quatRotate(state.gyrQuat, acc, accEarth);
-    filterVec(accEarth, 3, params.tauAcc, coeffs.accTs, coeffs.accLpB, coeffs.accLpA, state.accLpState, state.lastAccLp);
+    // filter acc in inertial frame   
 
-    // transform to 6D earth frame and normalize
-    quatRotate(state.accQuat, state.lastAccLp, accEarth);
-    normalize(accEarth, 3);
+    if(!params.useAccStep){
+        quatRotate(state.gyrQuat, acc, accEarth); 
+        filterVec(accEarth, 3, params.tauAcc, coeffs.accTs, coeffs.accLpB, coeffs.accLpA, state.accLpState, state.lastAccLp);
 
-    // inclination correction
-    vqf_real_t accCorrQuat[4];
-    vqf_real_t q_w = std::sqrt((accEarth[2]+1)/2);
-    if (q_w > vqf_real_t(1e-6)) {
-        accCorrQuat[0] = q_w;
-        accCorrQuat[1] = vqf_real_t(0.5)*accEarth[1]/q_w;
-        accCorrQuat[2] = vqf_real_t(-0.5)*accEarth[0]/q_w;
-        accCorrQuat[3] = 0;
-    } else {
-        // to avoid numeric issues when acc is close to [0 0 -1], i.e. the correction step is close (<= 0.00011°) to 180°:
-        accCorrQuat[0] = 0;
-        accCorrQuat[1] = 1;
-        accCorrQuat[2] = 0;
-        accCorrQuat[3] = 0;
+        // transform to 6D earth frame and normalize
+        quatRotate(state.accQuat, state.lastAccLp, accEarth);
+        normalize(accEarth, 3);
+        // inclination correction
+        vqf_real_t accCorrQuat[4];
+        vqf_real_t q_w = std::sqrt((accEarth[2]+1)/2);
+        if (q_w > vqf_real_t(1e-6)) {
+            accCorrQuat[0] = q_w;
+            accCorrQuat[1] = vqf_real_t(0.5)*accEarth[1]/q_w;
+            accCorrQuat[2] = vqf_real_t(-0.5)*accEarth[0]/q_w;
+            accCorrQuat[3] = 0;
+        } else {
+            // to avoid numeric issues when acc is close to [0 0 -1], i.e. the correction step is close (<= 0.00011°) to 180°:
+            accCorrQuat[0] = 0;
+            accCorrQuat[1] = 1;
+            accCorrQuat[2] = 0;
+            accCorrQuat[3] = 0;
+        }
+        quatMultiply(accCorrQuat, state.accQuat, state.accQuat);
+    }else{
+        quatRotate(state.gyrQuat, acc, accEarth); 
+        quatRotate(state.accQuat, accEarth, accEarth);
+        normalize(accEarth, 3);
+
+        vqf_real_t cross[3];
+        vqf_real_t cross_norm_quat[4];
+        cross_prod(accEarth, accEarthRef, cross);
+        vqf_real_t ca_norm = norm(cross, 3);
+        
+        vqf_real_t w_acc_half = params.tauAcc * coeffs.accTs * 0.103143448;
+        vqf_real_t inv_ca_norm = 1.0 / ca_norm;
+        cross_norm_quat[0] = 1;
+        cross_norm_quat[1] = cross[0] * inv_ca_norm * w_acc_half;
+        cross_norm_quat[2] = cross[1] * inv_ca_norm * w_acc_half;
+        cross_norm_quat[3] = cross[2] * inv_ca_norm * w_acc_half;
+        quatMultiply(cross_norm_quat, state.accQuat, state.accQuat);
     }
-    quatMultiply(accCorrQuat, state.accQuat, state.accQuat);
+    
     normalize(state.accQuat, 4);
 
     // calculate correction angular rate to facilitate debugging
@@ -414,13 +434,163 @@ void VQF::update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_rea
     updateMag(mag);
 }
 
+
+inline bool VQF::normalize3d(const vqf_real_t in[3], vqf_real_t out[3])
+{
+    const vqf_real_t n = std::sqrt(in[0]*in[0] + in[1]*in[1] + in[2]*in[2]);
+    if (n <= vqf_real_t(1e-10)) {
+        out[0] = out[1] = out[2] = vqf_real_t(0.0);
+        return false;
+    }
+    const vqf_real_t inv = vqf_real_t(1.0) / n;
+    out[0] = in[0] * inv;
+    out[1] = in[1] * inv;
+    out[2] = in[2] * inv;
+    return true;
+}
+
+inline void VQF::integrateEulerStep(const vqf_real_t q[4], const vqf_real_t gyr[3], vqf_real_t dt, vqf_real_t out[4])
+{
+    const vqf_real_t w = q[0];
+    const vqf_real_t x = q[1];
+    const vqf_real_t y = q[2];
+    const vqf_real_t z = q[3];
+
+    const vqf_real_t wx = gyr[0];
+    const vqf_real_t wy = gyr[1];
+    const vqf_real_t wz = gyr[2];
+
+    // Euler integration: q_new = q + q_dot * dt
+    const vqf_real_t q_dot_w = vqf_real_t(0.5) * (-x*wx - y*wy - z*wz);
+    const vqf_real_t q_dot_x = vqf_real_t(0.5) * ( w*wx + y*wz - z*wy);
+    const vqf_real_t q_dot_y = vqf_real_t(0.5) * ( w*wy - x*wz + z*wx);
+    const vqf_real_t q_dot_z = vqf_real_t(0.5) * ( w*wz + x*wy - y*wx);
+
+    out[0] = w + q_dot_w*dt;
+    out[1] = x + q_dot_x*dt;
+    out[2] = y + q_dot_y*dt;
+    out[3] = z + q_dot_z*dt;
+    VQF::normalize(out, 4);
+}
+
+void VQF::update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope[3],
+                        const vqf_real_t accelerometer[3], const vqf_real_t magnetometer[3],
+                        vqf_real_t dt, vqf_real_t w_acc, vqf_real_t w_mag,
+                        bool linMag, bool wholeMag, bool no_mag,
+                        vqf_real_t quat_out[4])
+{
+    vqf_real_t acc[3];
+    if (!normalize3d(accelerometer, acc)) {
+        std::copy(quaternion, quaternion + 4, quat_out);
+        return;
+    }
+
+    vqf_real_t mag[3];
+    if (!normalize3d(magnetometer, mag)) {
+        std::copy(quaternion, quaternion + 4, quat_out);
+        return;
+    }
+
+    vqf_real_t qp[4];
+    integrateEulerStep(quaternion, gyroscope, dt, qp);
+
+    vqf_real_t acc_mes_pred[3];
+    VQF::quatRotate(qp, acc, acc_mes_pred);
+    
+    vqf_real_t acc_cross[3]; // [0,0,1] ref
+    acc_cross[0] = acc_mes_pred[1];
+    acc_cross[1] = -acc_mes_pred[0];
+    acc_cross[2] = 0.0f;
+        
+    const vqf_real_t ca_norm = std::sqrt(acc_cross[0]*acc_cross[0] + acc_cross[1]*acc_cross[1]);
+    const vqf_real_t inv = vqf_real_t(1.0) / ca_norm;
+    acc_cross[0] *= inv;
+    acc_cross[1] *= inv;
+
+    vqf_real_t mag_step = vqf_real_t(0.0);
+
+    if (!no_mag) {
+        //quatConj(qp, qp);
+        const vqf_real_t mag_pr_x = (1 - 2*qp[2]*qp[2] - 2*qp[3]*qp[3])*mag[0] +
+                                     2 * mag[1]*(qp[2]*qp[1] - qp[0]*qp[3]) + 
+                                     2 * mag[2]*(qp[0]*qp[2] + qp[3]*qp[1]);
+    
+
+        // VQF::cross_prod(mag_mes_pred, mr, mag_cross);
+        // if (!linMag) {
+        //     const vqf_real_t cm_norm = std::sqrt(mag_cross[0]*mag_cross[0] + mag_cross[1]*mag_cross[1] + mag_cross[2]*mag_cross[2]);
+        //     if (cm_norm > vqf_real_t(1e-10)) {
+        //         const vqf_real_t inv = vqf_real_t(1.0) / cm_norm;
+        //         mag_cross[0] *= inv;
+        //         mag_cross[1] *= inv;
+        //         mag_cross[2] *= inv;
+        //     } else {
+        //         mag_cross[0] = mag_cross[1] = mag_cross[2] = vqf_real_t(0.0);
+        //     }
+        // }
+
+        // if (!wholeMag) {
+        //     mag_cross[0] = vqf_real_t(0.0);
+        //     mag_cross[1] = vqf_real_t(0.0);
+        // }
+
+        const vqf_real_t w_mag_half = w_mag * dt * vqf_real_t(0.0215351);
+        mag_step = mag_pr_x > 0 ? -w_mag_half : w_mag_half;
+    }
+
+    const vqf_real_t w_acc_half = w_acc * dt * vqf_real_t(0.103143448);
+    const vqf_real_t im_x = acc_cross[0]*w_acc_half;
+    const vqf_real_t im_y = acc_cross[1]*w_acc_half;
+    const vqf_real_t im_z = mag_step;
+    //const vqf_real_t im_norm = std::sqrt(im_x*im_x + im_y*im_y + im_z*im_z);
+    const vqf_real_t q_cor[4] = {
+            vqf_real_t(1.0),
+            im_x,
+            im_y,
+            im_z,
+        };
+        
+    // const vqf_real_t sinc_val = (im_norm < vqf_real_t(1e-4))
+    //     ? vqf_real_t(1.0)
+    //     : std::sin(im_norm) / im_norm;
+
+    // const vqf_real_t im2_x = im_x * sinc_val;
+    // const vqf_real_t im2_y = im_y * sinc_val;
+    // const vqf_real_t im2_z = im_z * sinc_val;
+    // const vqf_real_t im2_sum_sq = im2_x*im2_x + im2_y*im2_y + im2_z*im2_z;
+
+    // const vqf_real_t q_cor[4] = {
+    //     std::sqrt(vqf_real_t(1.0) - im2_sum_sq),
+    //     im2_x,
+    //     im2_y,
+    //     im2_z,
+    // };
+
+    VQF::quatMultiply(q_cor, qp, quat_out);
+    if (quat_out[0] < vqf_real_t(0.0)) {
+        quat_out[0] = -quat_out[0];
+        quat_out[1] = -quat_out[1];
+        quat_out[2] = -quat_out[2];
+        quat_out[3] = -quat_out[3];
+    }
+    VQF::normalize(quat_out, 4);
+}
+
+
 void VQF::updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_real_t mag[], size_t N,
                       vqf_real_t out6D[], vqf_real_t out9D[], vqf_real_t outDelta[], vqf_real_t outBias[],
                       vqf_real_t outBiasSigma[], bool outRest[], bool outMagDist[])
 {
     for (size_t i = 0; i < N; i++) {
-        if (mag) {
-            update(gyr+3*i, acc+3*i, mag+3*i);
+        if (mag) {            
+            if(params.useAccStepWhole) {
+                update_step(state.step_quat, gyr+3*i, acc+3*i, mag+3*i, 
+                            coeffs.accTs, params.tauAcc, params.tauMag,
+                            true, false,
+                            false, state.step_quat);
+            }else{
+                update(gyr+3*i, acc+3*i, mag+3*i);
+            }
         } else {
             update(gyr+3*i, acc+3*i);
         }
@@ -428,7 +598,11 @@ void VQF::updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_
             getQuat6D(out6D+4*i);
         }
         if (out9D) {
-            getQuat9D(out9D+4*i);
+            if(params.useAccStepWhole) {
+                std::copy(state.step_quat, state.step_quat+4, out9D+4*i);
+            }else{
+                getQuat6D(out9D+4*i);
+            }
         }
         if (outDelta) {
             outDelta[i] = state.delta;
@@ -447,6 +621,12 @@ void VQF::updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_
         }
     }
 }
+
+void VQF::setStepQuat(vqf_real_t newstate[4])
+{
+    std::copy(newstate, newstate+4, state.step_quat);
+}
+
 
 void VQF::getQuat3D(vqf_real_t out[4]) const
 {
@@ -552,7 +732,7 @@ void VQF::setRestBiasEstEnabled(bool enabled)
     }
     params.restBiasEstEnabled = enabled;
     state.restDetected = false;
-    std::fill(state.restLastSquaredDeviations, state.restLastSquaredDeviations + 2, 0.0);
+    std::fill(state.restLastSquaredDeviations, state.restLastSquaredDeviations + 3, 0.0);
     state.restT = 0.0;
     std::fill(state.restLastGyrLp, state.restLastGyrLp + 3, 0.0);
     std::fill(state.restGyrLpState, state.restGyrLpState + 3*2, NaN);
@@ -669,7 +849,7 @@ void VQF::resetState()
     std::fill(state.motionBiasEstBiasLpState, state.motionBiasEstBiasLpState + 2*2, NaN);
 #endif
 
-    std::fill(state.restLastSquaredDeviations, state.restLastSquaredDeviations + 2, 0.0);
+    std::fill(state.restLastSquaredDeviations, state.restLastSquaredDeviations + 3, 0.0);
     state.restT = 0.0;
     std::fill(state.restLastGyrLp, state.restLastGyrLp + 3, 0.0);
     std::fill(state.restGyrLpState, state.restGyrLpState + 3*2, NaN);
@@ -686,6 +866,15 @@ void VQF::resetState()
     std::fill(state.magNormDip, state.magNormDip + 2, 0);
     std::fill(state.magNormDipLpState, state.magNormDipLpState + 2*2, NaN);
 }
+
+
+void VQF::cross_prod(const vqf_real_t v1[3], const vqf_real_t v2[3], vqf_real_t out[3])
+{
+    out[0] = v1[1] * v2[2] - v1[2] * v2[1];
+    out[1] = v1[2] * v2[0] - v1[0] * v2[2];
+    out[2] = v1[0] * v2[1] - v1[1] * v2[0];
+}
+
 
 void VQF::quatMultiply(const vqf_real_t q1[4], const vqf_real_t q2[4], vqf_real_t out[4])
 {
@@ -968,6 +1157,16 @@ void VQF::setup()
     assert(coeffs.gyrTs > 0);
     assert(coeffs.accTs > 0);
     assert(coeffs.magTs > 0);
+    
+    accEarthRef[0] = 0;
+    accEarthRef[1] = 0;
+    accEarthRef[2] = 1;
+    
+    state.step_quat[0] = 1;
+    state.step_quat[1] = 0;
+    state.step_quat[2] = 0;
+    state.step_quat[3] = 0;
+
 
     filterCoeffs(params.tauAcc, coeffs.accTs, coeffs.accLpB, coeffs.accLpA);
 

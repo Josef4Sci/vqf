@@ -2,7 +2,11 @@
 #
 # SPDX-License-Identifier: MIT
 
-from .vqf import VQF, offlineVQF
+try:
+	from .vqf import VQF, offlineVQF
+except ModuleNotFoundError:
+	VQF = None
+	offlineVQF = None
 from .basicvqf import BasicVQF
 from .pyvqf import PyVQF
 from .utils import get_cpp_path, get_matlab_path

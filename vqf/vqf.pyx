@@ -5,7 +5,6 @@
 # distutils: language = c++
 # cython: language_level=3
 # cython: embedsignature=True
-# distutils: sources = vqf/cpp/vqf.cpp vqf/cpp/offline_vqf.cpp
 # distutils: undef_macros = NDEBUG
 
 import numpy as np
@@ -45,10 +44,14 @@ cdef extern from 'cpp/vqf.hpp':
         vqf_real_t magMinUndisturbedTime
         vqf_real_t magMaxRejectionTime
         vqf_real_t magRejectionFactor
+        bool useAccStep
+        bool useAccStepWhole
 
     cdef struct VQFState:
         vqf_real_t gyrQuat[4]
-        vqf_real_t accQuat[4]
+        vqf_real_t accQuat[4]    
+        vqf_real_t step_quat[4]
+
         vqf_real_t delta
         bool restDetected
         bool magDistDetected
@@ -110,6 +113,8 @@ cdef extern from 'cpp/vqf.hpp':
         void updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_real_t mag[], size_t N,
                          vqf_real_t out6D[], vqf_real_t out9D[], vqf_real_t outDelta[], vqf_real_t outBias[],
                          vqf_real_t outBiasSigma[], bool outRest[], bool outMagDist[])
+
+        void setStepQuat(vqf_real_t newstate[4])
 
         void getQuat3D(vqf_real_t out[4]) const
         void getQuat6D(vqf_real_t out[4]) const
@@ -249,7 +254,7 @@ cdef class VQF:
                   biasSigmaRest=None, restMinT=None, restFilterTau=None, restThGyr=None, restThAcc=None,
                   magCurrentTau=None, magRefTau=None, magNormTh=None, magDipTh=None, magNewTime=None,
                   magNewFirstTime=None, magNewMinGyr=None, magMinUndisturbedTime=None, magMaxRejectionTime=None,
-                  magRejectionFactor=None):
+                  magRejectionFactor=None, useAccStep=None, useAccStepWhole=None):
         cdef VQFParams params
         if tauAcc is not None:
             params.tauAcc = tauAcc
@@ -300,7 +305,11 @@ cdef class VQF:
         if magMaxRejectionTime is not None:
             params.magMaxRejectionTime = magMaxRejectionTime
         if magRejectionFactor is not None:
-            params.magRejectionFactor = magRejectionFactor
+            params.magRejectionFactor = magRejectionFactor        
+        if useAccStep is not None:
+            params.useAccStep = useAccStep
+        if useAccStepWhole is not None:
+            params.useAccStepWhole = useAccStepWhole
 
         self.c_obj = new C_VQF(params, <vqf_real_t> gyrTs, <vqf_real_t> accTs, <vqf_real_t> magTs)
 
@@ -312,7 +321,7 @@ cdef class VQF:
                  biasSigmaRest=None, restMinT=None, restFilterTau=None, restThGyr=None, restThAcc=None,
                  magCurrentTau=None, magRefTau=None, magNormTh=None, magDipTh=None, magNewTime=None,
                  magNewFirstTime=None, magNewMinGyr=None, magMinUndisturbedTime=None, magMaxRejectionTime=None,
-                 magRejectionFactor=None):
+                 magRejectionFactor=None, useAccStep=None, useAccStepWhole=None):
         """
         :param gyrTs: sampling time of the gyroscope measurements in seconds
         :param accTs: sampling time of the accelerometer measurements in seconds
@@ -592,6 +601,10 @@ cdef class VQF:
             magNormDip=magNormDip,
             magNormDipLpState=magNormDipLpState,
         )
+
+    def setStepQuat(self, np.ndarray[vqf_real_t, ndim=1, mode='c'] quat not None):
+        assert quat.shape[0] == 4
+        self.c_obj.setStepQuat(<vqf_real_t*> np.PyArray_DATA(quat))
 
     def getQuat3D(self):
         r"""Returns the angular velocity strapdown integration quaternion
