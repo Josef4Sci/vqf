@@ -6,6 +6,7 @@
 #define VQF_HPP
 
 #include <stddef.h>
+#include <memory>
 
 // #define VQF_SINGLE_PRECISION
 // #define VQF_NO_MOTION_BIAS_ESTIMATION
@@ -695,6 +696,8 @@ public:
 
     void integrateEulerStep(const vqf_real_t q[4], const vqf_real_t gyr[3], vqf_real_t dt, vqf_real_t out[4]);
 
+    void initFromAccMag(const vqf_real_t acc[3], const vqf_real_t mag[3], vqf_real_t quat_out[4]);
+
     void update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope[3],
          const vqf_real_t accelerometer[3], const vqf_real_t magnetometer[3], vqf_real_t dt, vqf_real_t w_acc, vqf_real_t w_mag, bool linMag, bool wholeMag, bool no_mag, vqf_real_t quat_out[4]);
 
@@ -1081,6 +1084,8 @@ protected:
     VQFCoefficients coeffs;
 
     vqf_real_t accEarthRef[3];
+    std::shared_ptr<class StaticDetector> stepStaticDetector;
+    std::shared_ptr<class GyroBias> stepGyroBias;
 };
 
 #endif // VQF_HPP

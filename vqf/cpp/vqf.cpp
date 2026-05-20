@@ -3,11 +3,14 @@
 // SPDX-License-Identifier: MIT
 
 #include "vqf.hpp"
+#include "gyro_bias.hpp"
+#include "static_detector.hpp"
 
 #include <algorithm>
 #include <limits>
 #include <cmath>
 #include <assert.h>
+#include <iostream>
 
 #define EPS std::numeric_limits<vqf_real_t>::epsilon()
 #define NaN std::numeric_limits<vqf_real_t>::quiet_NaN()
@@ -473,6 +476,92 @@ inline void VQF::integrateEulerStep(const vqf_real_t q[4], const vqf_real_t gyr[
     VQF::normalize(out, 4);
 }
 
+void VQF::initFromAccMag(const vqf_real_t acc[3], const vqf_real_t mag[3], vqf_real_t quat_out[4])
+{
+    // Initialize quaternion from accelerometer and magnetometer readings
+    // This aligns acc with gravity [0, 0, 1] and mag with the reference field
+    
+    
+    //std::cout << "ini acc "<< acc[0] << " " << acc[1] << " " << acc[2] << "\n";
+    //std::cout << "ini mag "<< mag[0] << " " << mag[1] << " " << mag[2] << "\n";
+
+    vqf_real_t q[4]={1,0,0,0};
+    vqf_real_t qo[4]={1,0,0,0};
+    vqf_real_t g[3]={0,0,0};
+    for(size_t i=0; i<300; i++){
+        update_step(q, g, acc, mag, 
+                            0.1, 4, 10,
+                            true, false,
+                            false, qo);
+                            
+        std::copy(qo, qo + 4, q);
+    }
+    //std::cout << "Initialized "<< q[0] << " " << q[1] << " " << q[2] << " " << q[3] << "\n";
+    
+    std::copy(q, q + 4, quat_out);
+    normalize(quat_out, 4);
+    // vqf_real_t acc_norm[3];
+    // vqf_real_t mag_norm[3];
+    
+    // // Normalize vectors
+    // if (!normalize3d(acc, acc_norm)) {
+    //     quatSetToIdentity(quat_out);
+    //     return;
+    // }
+    // if (!normalize3d(mag, mag_norm)) {
+    //     quatSetToIdentity(quat_out);
+    //     return;
+    // }
+    
+    // // Reference vectors
+    // vqf_real_t acc_ref[3] = {vqf_real_t(0.0), vqf_real_t(0.0), vqf_real_t(1.0)};  // Gravity points down in earth frame
+    
+    // // Step 1: Get quaternion that maps acc_norm to acc_ref
+    // vqf_real_t cross_acc[3];
+    // cross_prod(acc_norm, acc_ref, cross_acc);
+    // vqf_real_t cross_acc_norm = norm(cross_acc, 3);
+    // vqf_real_t dot_acc = acc_norm[0]*acc_ref[0] + acc_norm[1]*acc_ref[1] + acc_norm[2]*acc_ref[2];
+    
+    // vqf_real_t q_acc[4];
+    // if (cross_acc_norm > vqf_real_t(1e-6)) {
+    //     // General case: rotation axis is cross product
+    //     vqf_real_t inv_norm = vqf_real_t(1.0) / cross_acc_norm;
+    //     vqf_real_t axis[3] = {cross_acc[0]*inv_norm, cross_acc[1]*inv_norm, cross_acc[2]*inv_norm};
+    //     vqf_real_t angle = std::atan2(cross_acc_norm, dot_acc);
+    //     q_acc[0] = std::cos(angle/vqf_real_t(2.0));
+    //     q_acc[1] = axis[0] * std::sin(angle/vqf_real_t(2.0));
+    //     q_acc[2] = axis[1] * std::sin(angle/vqf_real_t(2.0));
+    //     q_acc[3] = axis[2] * std::sin(angle/vqf_real_t(2.0));
+    // } else if (dot_acc > vqf_real_t(0.0)) {
+    //     // Vectors already aligned
+    //     quatSetToIdentity(q_acc);
+    // } else {
+    //     // Vectors opposite: need 180 degree rotation around horizontal axis
+    //     q_acc[0] = vqf_real_t(0.0);
+    //     q_acc[1] = vqf_real_t(1.0);
+    //     q_acc[2] = vqf_real_t(0.0);
+    //     q_acc[3] = vqf_real_t(0.0);
+    // }
+    // normalize(q_acc, 4);
+    
+    // // Step 2: Rotate mag_norm using q_acc to get mag in the acc-aligned frame
+    // vqf_real_t mag_rotated[3];
+    // quatRotate(q_acc, mag_norm, mag_rotated);
+    
+    // // Step 3: Get heading rotation to align mag with reference (approximately north = [1, 0, 0] in earth frame)
+    // // We rotate around z-axis only to preserve inclination from acc
+    // vqf_real_t mag_heading = std::atan2(mag_rotated[1], mag_rotated[0]);
+    // vqf_real_t q_heading[4];
+    // q_heading[0] = std::cos(mag_heading/vqf_real_t(2.0));
+    // q_heading[1] = vqf_real_t(0.0);
+    // q_heading[2] = vqf_real_t(0.0);
+    // q_heading[3] = std::sin(mag_heading/vqf_real_t(2.0));
+    
+    // // Step 4: Combine rotations: q_total = q_heading * q_acc
+    // quatMultiply(q_heading, q_acc, quat_out);
+    // normalize(quat_out, 4);
+}
+
 void VQF::update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope[3],
                         const vqf_real_t accelerometer[3], const vqf_real_t magnetometer[3],
                         vqf_real_t dt, vqf_real_t w_acc, vqf_real_t w_mag,
@@ -485,14 +574,35 @@ void VQF::update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope
         return;
     }
 
-    vqf_real_t mag[3];
-    if (!normalize3d(magnetometer, mag)) {
-        std::copy(quaternion, quaternion + 4, quat_out);
-        return;
+    vqf_real_t mag[3] = {vqf_real_t(0.0), vqf_real_t(0.0), vqf_real_t(0.0)};
+    if (!no_mag) {
+        if (!normalize3d(magnetometer, mag)) {
+            std::copy(quaternion, quaternion + 4, quat_out);
+            return;
+        }
     }
 
+    if (!stepStaticDetector) {
+        stepStaticDetector = std::make_shared<StaticDetector>();
+    }
+    if (!stepGyroBias) {
+        stepGyroBias = std::make_shared<GyroBias>();
+    }
+    const bool isStatic = stepStaticDetector->update(accelerometer, gyroscope, mag);
+    if (isStatic) {
+        stepGyroBias->update(gyroscope);
+    }
+    const vqf_real_t staticGain = isStatic ? vqf_real_t(3.0) : vqf_real_t(1.0);
+
     vqf_real_t qp[4];
-    integrateEulerStep(quaternion, gyroscope, dt, qp);
+    vqf_real_t bias[3];
+    stepGyroBias->getBias(bias);
+    vqf_real_t corrected_gyr[3] = {
+        gyroscope[0] - bias[0],
+        gyroscope[1] - bias[1],
+        gyroscope[2] - bias[2]
+    };
+    integrateEulerStep(quaternion, corrected_gyr, dt, qp);
 
     vqf_real_t acc_mes_pred[3];
     VQF::quatRotate(qp, acc, acc_mes_pred);
@@ -503,68 +613,36 @@ void VQF::update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope
     acc_cross[2] = 0.0f;
         
     const vqf_real_t ca_norm = std::sqrt(acc_cross[0]*acc_cross[0] + acc_cross[1]*acc_cross[1]);
-    const vqf_real_t inv = vqf_real_t(1.0) / ca_norm;
-    acc_cross[0] *= inv;
-    acc_cross[1] *= inv;
+    if (ca_norm > vqf_real_t(1e-10)) {
+        const vqf_real_t inv = vqf_real_t(1.0) / ca_norm;
+        acc_cross[0] *= inv;
+        acc_cross[1] *= inv;
+    } else {
+        acc_cross[0] = vqf_real_t(0.0);
+        acc_cross[1] = vqf_real_t(0.0);
+    }
 
     vqf_real_t mag_step = vqf_real_t(0.0);
 
     if (!no_mag) {
-        //quatConj(qp, qp);
+        
         const vqf_real_t mag_pr_x = (1 - 2*qp[2]*qp[2] - 2*qp[3]*qp[3])*mag[0] +
                                      2 * mag[1]*(qp[2]*qp[1] - qp[0]*qp[3]) + 
                                      2 * mag[2]*(qp[0]*qp[2] + qp[3]*qp[1]);
     
-
-        // VQF::cross_prod(mag_mes_pred, mr, mag_cross);
-        // if (!linMag) {
-        //     const vqf_real_t cm_norm = std::sqrt(mag_cross[0]*mag_cross[0] + mag_cross[1]*mag_cross[1] + mag_cross[2]*mag_cross[2]);
-        //     if (cm_norm > vqf_real_t(1e-10)) {
-        //         const vqf_real_t inv = vqf_real_t(1.0) / cm_norm;
-        //         mag_cross[0] *= inv;
-        //         mag_cross[1] *= inv;
-        //         mag_cross[2] *= inv;
-        //     } else {
-        //         mag_cross[0] = mag_cross[1] = mag_cross[2] = vqf_real_t(0.0);
-        //     }
-        // }
-
-        // if (!wholeMag) {
-        //     mag_cross[0] = vqf_real_t(0.0);
-        //     mag_cross[1] = vqf_real_t(0.0);
-        // }
-
         const vqf_real_t w_mag_half = w_mag * dt * vqf_real_t(0.0215351);
         mag_step = mag_pr_x > 0 ? -w_mag_half : w_mag_half;
     }
 
-    const vqf_real_t w_acc_half = w_acc * dt * vqf_real_t(0.103143448);
-    const vqf_real_t im_x = acc_cross[0]*w_acc_half;
-    const vqf_real_t im_y = acc_cross[1]*w_acc_half;
-    const vqf_real_t im_z = mag_step;
-    //const vqf_real_t im_norm = std::sqrt(im_x*im_x + im_y*im_y + im_z*im_z);
+    const vqf_real_t w_acc_half = w_acc * staticGain * dt * vqf_real_t(0.103143448);
+    
     const vqf_real_t q_cor[4] = {
             vqf_real_t(1.0),
-            im_x,
-            im_y,
-            im_z,
+            acc_cross[0]*w_acc_half,
+            acc_cross[1]*w_acc_half,
+            mag_step,
         };
         
-    // const vqf_real_t sinc_val = (im_norm < vqf_real_t(1e-4))
-    //     ? vqf_real_t(1.0)
-    //     : std::sin(im_norm) / im_norm;
-
-    // const vqf_real_t im2_x = im_x * sinc_val;
-    // const vqf_real_t im2_y = im_y * sinc_val;
-    // const vqf_real_t im2_z = im_z * sinc_val;
-    // const vqf_real_t im2_sum_sq = im2_x*im2_x + im2_y*im2_y + im2_z*im2_z;
-
-    // const vqf_real_t q_cor[4] = {
-    //     std::sqrt(vqf_real_t(1.0) - im2_sum_sq),
-    //     im2_x,
-    //     im2_y,
-    //     im2_z,
-    // };
 
     VQF::quatMultiply(q_cor, qp, quat_out);
     if (quat_out[0] < vqf_real_t(0.0)) {
@@ -582,6 +660,17 @@ void VQF::updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_
                       vqf_real_t outBiasSigma[], bool outRest[], bool outMagDist[])
 {
     for (size_t i = 0; i < N; i++) {
+
+        //initialize quaternion from acc and mag (if exist) for the first sample to ensure fast convergence, especially for the step detection version
+        if (i == 0) {
+            if (mag) {
+                initFromAccMag(acc+3*i, mag+3*i, state.step_quat);
+            } else {
+                // Initialize from acc only (set inclination, zero heading)
+                initFromAccMag(acc+3*i, accEarthRef, state.step_quat);
+            }
+        }
+
         if (mag) {            
             if(params.useAccStepWhole) {
                 update_step(state.step_quat, gyr+3*i, acc+3*i, mag+3*i, 
@@ -865,6 +954,13 @@ void VQF::resetState()
     state.magCandidateT = 0.0;
     std::fill(state.magNormDip, state.magNormDip + 2, 0);
     std::fill(state.magNormDipLpState, state.magNormDipLpState + 2*2, NaN);
+
+    if (stepStaticDetector) {
+        stepStaticDetector->reset();
+    }
+    if (stepGyroBias) {
+        stepGyroBias->reset();
+    }
 }
 
 
@@ -1166,6 +1262,17 @@ void VQF::setup()
     state.step_quat[1] = 0;
     state.step_quat[2] = 0;
     state.step_quat[3] = 0;
+
+    if (!stepStaticDetector) {
+        stepStaticDetector = std::make_shared<StaticDetector>();
+    } else {
+        stepStaticDetector->reset();
+    }
+    if (!stepGyroBias) {
+        stepGyroBias = std::make_shared<GyroBias>();
+    } else {
+        stepGyroBias->reset();
+    }
 
 
     filterCoeffs(params.tauAcc, coeffs.accTs, coeffs.accLpB, coeffs.accLpA);
