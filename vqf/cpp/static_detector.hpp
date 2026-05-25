@@ -9,6 +9,7 @@
 
 #include <deque>
 #include <cmath>
+#include <iostream>
 
 class StaticDetector
 {
@@ -26,6 +27,11 @@ public:
         , sampleIndex(-1)
         , lastMotionIndex(-static_cast<long>(blockForwardSteps))
     {
+        // std::cout << "StaticDetector initialized with accThreshold=" << accThreshold
+        //           << ", gyrThreshold=" << gyrThreshold
+        //           << ", magThreshold=" << magThreshold
+        //           << ", windowSize=" << windowSize
+        //           << ", blockForwardSteps=" << blockForwardSteps;
     }
 
     void reset()

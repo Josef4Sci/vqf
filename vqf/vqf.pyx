@@ -45,7 +45,14 @@ cdef extern from 'cpp/vqf.hpp':
         vqf_real_t magMaxRejectionTime
         vqf_real_t magRejectionFactor
         bool useAccStep
-        bool useAccStepWhole
+        bool useJustaFilter
+        
+        vqf_real_t staticAccThreshold
+        vqf_real_t staticGyrThreshold
+        vqf_real_t staticMagThreshold
+        size_t staticWindowSize
+        size_t staticBlockForwardSteps
+        
 
     cdef struct VQFState:
         vqf_real_t gyrQuat[4]
@@ -254,7 +261,9 @@ cdef class VQF:
                   biasSigmaRest=None, restMinT=None, restFilterTau=None, restThGyr=None, restThAcc=None,
                   magCurrentTau=None, magRefTau=None, magNormTh=None, magDipTh=None, magNewTime=None,
                   magNewFirstTime=None, magNewMinGyr=None, magMinUndisturbedTime=None, magMaxRejectionTime=None,
-                  magRejectionFactor=None, useAccStep=None, useAccStepWhole=None):
+                  magRejectionFactor=None, useJustaFilter=None,
+                staticAccThreshold=None, staticGyrThreshold=None, staticMagThreshold=None,
+                staticWindowSize=None, staticBlockForwardSteps=None):
         cdef VQFParams params
         if tauAcc is not None:
             params.tauAcc = tauAcc
@@ -306,10 +315,18 @@ cdef class VQF:
             params.magMaxRejectionTime = magMaxRejectionTime
         if magRejectionFactor is not None:
             params.magRejectionFactor = magRejectionFactor        
-        if useAccStep is not None:
-            params.useAccStep = useAccStep
-        if useAccStepWhole is not None:
-            params.useAccStepWhole = useAccStepWhole
+        if useJustaFilter is not None:
+            params.useJustaFilter = useJustaFilter
+        if staticAccThreshold is not None:
+            params.staticAccThreshold = staticAccThreshold
+        if staticGyrThreshold is not None:
+            params.staticGyrThreshold = staticGyrThreshold
+        if staticMagThreshold is not None:
+            params.staticMagThreshold = staticMagThreshold
+        if staticWindowSize is not None:
+            params.staticWindowSize = staticWindowSize
+        if staticBlockForwardSteps is not None:
+            params.staticBlockForwardSteps = staticBlockForwardSteps
 
         self.c_obj = new C_VQF(params, <vqf_real_t> gyrTs, <vqf_real_t> accTs, <vqf_real_t> magTs)
 
@@ -321,7 +338,10 @@ cdef class VQF:
                  biasSigmaRest=None, restMinT=None, restFilterTau=None, restThGyr=None, restThAcc=None,
                  magCurrentTau=None, magRefTau=None, magNormTh=None, magDipTh=None, magNewTime=None,
                  magNewFirstTime=None, magNewMinGyr=None, magMinUndisturbedTime=None, magMaxRejectionTime=None,
-                 magRejectionFactor=None, useAccStep=None, useAccStepWhole=None):
+                 magRejectionFactor=None, useJustaFilter=None,
+                 staticAccThreshold=None, staticGyrThreshold=None, staticMagThreshold=None,
+                 staticWindowSize=None, staticBlockForwardSteps=None):
+
         """
         :param gyrTs: sampling time of the gyroscope measurements in seconds
         :param accTs: sampling time of the accelerometer measurements in seconds

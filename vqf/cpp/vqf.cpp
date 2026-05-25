@@ -73,7 +73,6 @@ VQF::VQF(const VQFParams &params, vqf_real_t gyrTs, vqf_real_t accTs, vqf_real_t
 
     setup();
 }
-
 void VQF::updateGyr(const vqf_real_t gyr[3])
 {
     // rest detection
@@ -136,50 +135,30 @@ void VQF::updateAcc(const vqf_real_t acc[3])
 
     vqf_real_t accEarth[3];
 
-    // filter acc in inertial frame   
+    // filter acc in inertial frame
+    quatRotate(state.gyrQuat, acc, accEarth);
+    filterVec(accEarth, 3, params.tauAcc, coeffs.accTs, coeffs.accLpB, coeffs.accLpA, state.accLpState, state.lastAccLp);
 
-    if(!params.useAccStep){
-        quatRotate(state.gyrQuat, acc, accEarth); 
-        filterVec(accEarth, 3, params.tauAcc, coeffs.accTs, coeffs.accLpB, coeffs.accLpA, state.accLpState, state.lastAccLp);
+    // transform to 6D earth frame and normalize
+    quatRotate(state.accQuat, state.lastAccLp, accEarth);
+    normalize(accEarth, 3);
 
-        // transform to 6D earth frame and normalize
-        quatRotate(state.accQuat, state.lastAccLp, accEarth);
-        normalize(accEarth, 3);
-        // inclination correction
-        vqf_real_t accCorrQuat[4];
-        vqf_real_t q_w = std::sqrt((accEarth[2]+1)/2);
-        if (q_w > vqf_real_t(1e-6)) {
-            accCorrQuat[0] = q_w;
-            accCorrQuat[1] = vqf_real_t(0.5)*accEarth[1]/q_w;
-            accCorrQuat[2] = vqf_real_t(-0.5)*accEarth[0]/q_w;
-            accCorrQuat[3] = 0;
-        } else {
-            // to avoid numeric issues when acc is close to [0 0 -1], i.e. the correction step is close (<= 0.00011°) to 180°:
-            accCorrQuat[0] = 0;
-            accCorrQuat[1] = 1;
-            accCorrQuat[2] = 0;
-            accCorrQuat[3] = 0;
-        }
-        quatMultiply(accCorrQuat, state.accQuat, state.accQuat);
-    }else{
-        quatRotate(state.gyrQuat, acc, accEarth); 
-        quatRotate(state.accQuat, accEarth, accEarth);
-        normalize(accEarth, 3);
-
-        vqf_real_t cross[3];
-        vqf_real_t cross_norm_quat[4];
-        cross_prod(accEarth, accEarthRef, cross);
-        vqf_real_t ca_norm = norm(cross, 3);
-        
-        vqf_real_t w_acc_half = params.tauAcc * coeffs.accTs * 0.103143448;
-        vqf_real_t inv_ca_norm = 1.0 / ca_norm;
-        cross_norm_quat[0] = 1;
-        cross_norm_quat[1] = cross[0] * inv_ca_norm * w_acc_half;
-        cross_norm_quat[2] = cross[1] * inv_ca_norm * w_acc_half;
-        cross_norm_quat[3] = cross[2] * inv_ca_norm * w_acc_half;
-        quatMultiply(cross_norm_quat, state.accQuat, state.accQuat);
+    // inclination correction
+    vqf_real_t accCorrQuat[4];
+    vqf_real_t q_w = std::sqrt((accEarth[2]+1)/2);
+    if (q_w > vqf_real_t(1e-6)) {
+        accCorrQuat[0] = q_w;
+        accCorrQuat[1] = vqf_real_t(0.5)*accEarth[1]/q_w;
+        accCorrQuat[2] = vqf_real_t(-0.5)*accEarth[0]/q_w;
+        accCorrQuat[3] = 0;
+    } else {
+        // to avoid numeric issues when acc is close to [0 0 -1], i.e. the correction step is close (<= 0.00011°) to 180°:
+        accCorrQuat[0] = 0;
+        accCorrQuat[1] = 1;
+        accCorrQuat[2] = 0;
+        accCorrQuat[3] = 0;
     }
-    
+    quatMultiply(accCorrQuat, state.accQuat, state.accQuat);
     normalize(state.accQuat, 4);
 
     // calculate correction angular rate to facilitate debugging
@@ -476,90 +455,138 @@ inline void VQF::integrateEulerStep(const vqf_real_t q[4], const vqf_real_t gyr[
     VQF::normalize(out, 4);
 }
 
+static bool normalize3dLocal(const vqf_real_t in[3], vqf_real_t out[3])
+{
+    const vqf_real_t n = std::sqrt(in[0]*in[0] + in[1]*in[1] + in[2]*in[2]);
+    if (n <= vqf_real_t(1e-12)) {
+        out[0] = out[1] = out[2] = vqf_real_t(0.0);
+        return false;
+    }
+    const vqf_real_t inv = vqf_real_t(1.0) / n;
+    out[0] = in[0] * inv;
+    out[1] = in[1] * inv;
+    out[2] = in[2] * inv;
+    return true;
+}
+
+static void projectOntoPlane(const vqf_real_t v[3], const vqf_real_t n_unit[3], vqf_real_t out[3])
+{
+    const vqf_real_t scale = v[0]*n_unit[0] + v[1]*n_unit[1] + v[2]*n_unit[2];
+    out[0] = v[0] - scale*n_unit[0];
+    out[1] = v[1] - scale*n_unit[1];
+    out[2] = v[2] - scale*n_unit[2];
+}
+
+static vqf_real_t signedAngleAroundAxis(const vqf_real_t from[3],
+                                        const vqf_real_t to[3],
+                                        const vqf_real_t axis_unit[3])
+{
+    const vqf_real_t c[3] = {
+        from[1]*to[2] - from[2]*to[1],
+        from[2]*to[0] - from[0]*to[2],
+        from[0]*to[1] - from[1]*to[0]
+    };
+    const vqf_real_t sin_theta = axis_unit[0]*c[0] + axis_unit[1]*c[1] + axis_unit[2]*c[2];
+    const vqf_real_t cos_theta = from[0]*to[0] + from[1]*to[1] + from[2]*to[2];
+    return std::atan2(sin_theta, cos_theta);
+}
+
+static bool quatFromTwoVectors(const vqf_real_t from[3], const vqf_real_t to[3], vqf_real_t out[4])
+{
+    vqf_real_t f[3];
+    vqf_real_t t[3];
+    if (!normalize3dLocal(from, f) || !normalize3dLocal(to, t)) {
+        return false;
+    }
+
+    const vqf_real_t dot = f[0]*t[0] + f[1]*t[1] + f[2]*t[2];
+    if (dot < vqf_real_t(-1.0) + vqf_real_t(1e-12)) {
+        vqf_real_t axis[3];
+        if (std::fabs(f[0]) < std::fabs(f[1]) && std::fabs(f[0]) < std::fabs(f[2])) {
+            axis[0] = vqf_real_t(0.0);
+            axis[1] = -f[2];
+            axis[2] = f[1];
+        } else if (std::fabs(f[1]) < std::fabs(f[2])) {
+            axis[0] = -f[2];
+            axis[1] = vqf_real_t(0.0);
+            axis[2] = f[0];
+        } else {
+            axis[0] = -f[1];
+            axis[1] = f[0];
+            axis[2] = vqf_real_t(0.0);
+        }
+        if (!normalize3dLocal(axis, axis)) {
+            out[0] = vqf_real_t(1.0);
+            out[1] = out[2] = out[3] = vqf_real_t(0.0);
+            return true;
+        }
+        out[0] = vqf_real_t(0.0);
+        out[1] = axis[0];
+        out[2] = axis[1];
+        out[3] = axis[2];
+        return true;
+    }
+
+    const vqf_real_t cross[3] = {
+        f[1]*t[2] - f[2]*t[1],
+        f[2]*t[0] - f[0]*t[2],
+        f[0]*t[1] - f[1]*t[0]
+    };
+    out[0] = vqf_real_t(1.0) + dot;
+    out[1] = cross[0];
+    out[2] = cross[1];
+    out[3] = cross[2];
+    VQF::normalize(out, 4);
+    return true;
+}
+
 void VQF::initFromAccMag(const vqf_real_t acc[3], const vqf_real_t mag[3], vqf_real_t quat_out[4])
 {
-    // Initialize quaternion from accelerometer and magnetometer readings
-    // This aligns acc with gravity [0, 0, 1] and mag with the reference field
-    
-    
-    //std::cout << "ini acc "<< acc[0] << " " << acc[1] << " " << acc[2] << "\n";
-    //std::cout << "ini mag "<< mag[0] << " " << mag[1] << " " << mag[2] << "\n";
+    const vqf_real_t gravityRef[3] = {vqf_real_t(0.0), vqf_real_t(0.0), vqf_real_t(1.0)};
+    const vqf_real_t magRef[3] = {vqf_real_t(0.0), vqf_real_t(1.0), vqf_real_t(0.0)};
 
-    vqf_real_t q[4]={1,0,0,0};
-    vqf_real_t qo[4]={1,0,0,0};
-    vqf_real_t g[3]={0,0,0};
-    for(size_t i=0; i<300; i++){
-        update_step(q, g, acc, mag, 
-                            0.1, 4, 10,
-                            true, false,
-                            false, qo);
-                            
-        std::copy(qo, qo + 4, q);
+    vqf_real_t accNorm[3];
+    vqf_real_t magNorm[3];
+    if (!normalize3d(acc, accNorm) || !normalize3d(mag, magNorm)) {
+        quatSetToIdentity(quat_out);
+        return;
     }
-    //std::cout << "Initialized "<< q[0] << " " << q[1] << " " << q[2] << " " << q[3] << "\n";
-    
-    std::copy(q, q + 4, quat_out);
+
+    vqf_real_t q0[4];
+    if (!quatFromTwoVectors(accNorm, gravityRef, q0)) {
+        quatSetToIdentity(quat_out);
+        return;
+    }
+
+    vqf_real_t magAligned[3];
+    quatRotate(q0, magNorm, magAligned);
+
+    vqf_real_t magAlignedH[3];
+    vqf_real_t magRefH[3];
+    projectOntoPlane(magAligned, gravityRef, magAlignedH);
+    projectOntoPlane(magRef, gravityRef, magRefH);
+
+    if (norm(magAlignedH, 3) < vqf_real_t(1e-12) || norm(magRefH, 3) < vqf_real_t(1e-12)) {
+        std::copy(q0, q0 + 4, quat_out);
+        normalize(quat_out, 4);
+        return;
+    }
+
+    normalize(magAlignedH, 3);
+    normalize(magRefH, 3);
+
+    const vqf_real_t theta = signedAngleAroundAxis(magAlignedH, magRefH, gravityRef);
+    const vqf_real_t halfTheta = theta / vqf_real_t(2.0);
+    const vqf_real_t s = std::sin(halfTheta);
+    vqf_real_t yaw[4] = {
+        std::cos(halfTheta),
+        gravityRef[0] * s,
+        gravityRef[1] * s,
+        gravityRef[2] * s
+    };
+
+    quatMultiply(yaw, q0, quat_out);
     normalize(quat_out, 4);
-    // vqf_real_t acc_norm[3];
-    // vqf_real_t mag_norm[3];
-    
-    // // Normalize vectors
-    // if (!normalize3d(acc, acc_norm)) {
-    //     quatSetToIdentity(quat_out);
-    //     return;
-    // }
-    // if (!normalize3d(mag, mag_norm)) {
-    //     quatSetToIdentity(quat_out);
-    //     return;
-    // }
-    
-    // // Reference vectors
-    // vqf_real_t acc_ref[3] = {vqf_real_t(0.0), vqf_real_t(0.0), vqf_real_t(1.0)};  // Gravity points down in earth frame
-    
-    // // Step 1: Get quaternion that maps acc_norm to acc_ref
-    // vqf_real_t cross_acc[3];
-    // cross_prod(acc_norm, acc_ref, cross_acc);
-    // vqf_real_t cross_acc_norm = norm(cross_acc, 3);
-    // vqf_real_t dot_acc = acc_norm[0]*acc_ref[0] + acc_norm[1]*acc_ref[1] + acc_norm[2]*acc_ref[2];
-    
-    // vqf_real_t q_acc[4];
-    // if (cross_acc_norm > vqf_real_t(1e-6)) {
-    //     // General case: rotation axis is cross product
-    //     vqf_real_t inv_norm = vqf_real_t(1.0) / cross_acc_norm;
-    //     vqf_real_t axis[3] = {cross_acc[0]*inv_norm, cross_acc[1]*inv_norm, cross_acc[2]*inv_norm};
-    //     vqf_real_t angle = std::atan2(cross_acc_norm, dot_acc);
-    //     q_acc[0] = std::cos(angle/vqf_real_t(2.0));
-    //     q_acc[1] = axis[0] * std::sin(angle/vqf_real_t(2.0));
-    //     q_acc[2] = axis[1] * std::sin(angle/vqf_real_t(2.0));
-    //     q_acc[3] = axis[2] * std::sin(angle/vqf_real_t(2.0));
-    // } else if (dot_acc > vqf_real_t(0.0)) {
-    //     // Vectors already aligned
-    //     quatSetToIdentity(q_acc);
-    // } else {
-    //     // Vectors opposite: need 180 degree rotation around horizontal axis
-    //     q_acc[0] = vqf_real_t(0.0);
-    //     q_acc[1] = vqf_real_t(1.0);
-    //     q_acc[2] = vqf_real_t(0.0);
-    //     q_acc[3] = vqf_real_t(0.0);
-    // }
-    // normalize(q_acc, 4);
-    
-    // // Step 2: Rotate mag_norm using q_acc to get mag in the acc-aligned frame
-    // vqf_real_t mag_rotated[3];
-    // quatRotate(q_acc, mag_norm, mag_rotated);
-    
-    // // Step 3: Get heading rotation to align mag with reference (approximately north = [1, 0, 0] in earth frame)
-    // // We rotate around z-axis only to preserve inclination from acc
-    // vqf_real_t mag_heading = std::atan2(mag_rotated[1], mag_rotated[0]);
-    // vqf_real_t q_heading[4];
-    // q_heading[0] = std::cos(mag_heading/vqf_real_t(2.0));
-    // q_heading[1] = vqf_real_t(0.0);
-    // q_heading[2] = vqf_real_t(0.0);
-    // q_heading[3] = std::sin(mag_heading/vqf_real_t(2.0));
-    
-    // // Step 4: Combine rotations: q_total = q_heading * q_acc
-    // quatMultiply(q_heading, q_acc, quat_out);
-    // normalize(quat_out, 4);
 }
 
 void VQF::update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope[3],
@@ -583,16 +610,17 @@ void VQF::update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope
     }
 
     if (!stepStaticDetector) {
-        stepStaticDetector = std::make_shared<StaticDetector>();
+        stepStaticDetector = std::make_shared<StaticDetector>(params.staticAccThreshold, params.staticGyrThreshold, 
+            params.staticMagThreshold, params.staticWindowSize, params.staticBlockForwardSteps);
     }
     if (!stepGyroBias) {
-        stepGyroBias = std::make_shared<GyroBias>();
+        stepGyroBias = std::make_shared<GyroBias>(500, true);
     }
-    const bool isStatic = stepStaticDetector->update(accelerometer, gyroscope, mag);
-    if (isStatic) {
+    state.restDetected = stepStaticDetector->update(accelerometer, gyroscope, mag);
+    if (state.restDetected) {
         stepGyroBias->update(gyroscope);
     }
-    const vqf_real_t staticGain = isStatic ? vqf_real_t(3.0) : vqf_real_t(1.0);
+    const vqf_real_t staticGain = state.restDetected ? vqf_real_t(3.0) : vqf_real_t(1.0);
 
     vqf_real_t qp[4];
     vqf_real_t bias[3];
@@ -631,7 +659,7 @@ void VQF::update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope
                                      2 * mag[2]*(qp[0]*qp[2] + qp[3]*qp[1]);
     
         const vqf_real_t w_mag_half = w_mag * dt * vqf_real_t(0.0215351);
-        mag_step = mag_pr_x > 0 ? -w_mag_half : w_mag_half;
+        mag_step = mag_pr_x < vqf_real_t(0.0) ? -w_mag_half : w_mag_half;
     }
 
     const vqf_real_t w_acc_half = w_acc * staticGain * dt * vqf_real_t(0.103143448);
@@ -654,32 +682,34 @@ void VQF::update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope
     VQF::normalize(quat_out, 4);
 }
 
-
 void VQF::updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_real_t mag[], size_t N,
                       vqf_real_t out6D[], vqf_real_t out9D[], vqf_real_t outDelta[], vqf_real_t outBias[],
                       vqf_real_t outBiasSigma[], bool outRest[], bool outMagDist[])
 {
-    for (size_t i = 0; i < N; i++) {
+    if(params.useJustaFilter) {
 
-        //initialize quaternion from acc and mag (if exist) for the first sample to ensure fast convergence, especially for the step detection version
-        if (i == 0) {
-            if (mag) {
-                initFromAccMag(acc+3*i, mag+3*i, state.step_quat);
-            } else {
-                // Initialize from acc only (set inclination, zero heading)
-                initFromAccMag(acc+3*i, accEarthRef, state.step_quat);
+        if (mag) {
+            initFromAccMag(acc+3, mag+3, state.step_quat);
+        } else {
+            // Initialize from acc only (set inclination, zero heading)
+            initFromAccMag(acc+3, accEarthRef, state.step_quat);
+        }
+        stepGyroBias->reset();
+        
+        for (size_t i = 0; i < N; i++) {
+            update_step(state.step_quat, gyr+3*i, acc+3*i, mag+3*i, 
+                        coeffs.gyrTs, params.tauAcc, params.tauMag,
+                        true, false,
+                        false, state.step_quat);
+            std::copy(state.step_quat, state.step_quat+4, out9D+4*i);
+            if (outRest) {
+                outRest[i] = state.restDetected;
             }
         }
-
-        if (mag) {            
-            if(params.useAccStepWhole) {
-                update_step(state.step_quat, gyr+3*i, acc+3*i, mag+3*i, 
-                            coeffs.accTs, params.tauAcc, params.tauMag,
-                            true, false,
-                            false, state.step_quat);
-            }else{
-                update(gyr+3*i, acc+3*i, mag+3*i);
-            }
+    }else{
+        for (size_t i = 0; i < N; i++) {
+        if (mag) {
+            update(gyr+3*i, acc+3*i, mag+3*i);
         } else {
             update(gyr+3*i, acc+3*i);
         }
@@ -687,11 +717,7 @@ void VQF::updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_
             getQuat6D(out6D+4*i);
         }
         if (out9D) {
-            if(params.useAccStepWhole) {
-                std::copy(state.step_quat, state.step_quat+4, out9D+4*i);
-            }else{
-                getQuat6D(out9D+4*i);
-            }
+            getQuat9D(out9D+4*i);
         }
         if (outDelta) {
             outDelta[i] = state.delta;
@@ -709,6 +735,8 @@ void VQF::updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_
             outMagDist[i] = state.magDistDetected;
         }
     }
+    }
+
 }
 
 void VQF::setStepQuat(vqf_real_t newstate[4])
@@ -1264,12 +1292,14 @@ void VQF::setup()
     state.step_quat[3] = 0;
 
     if (!stepStaticDetector) {
-        stepStaticDetector = std::make_shared<StaticDetector>();
+        stepStaticDetector = std::make_shared<StaticDetector>(params.staticAccThreshold, params.staticGyrThreshold, 
+            params.staticMagThreshold, params.staticWindowSize, params.staticBlockForwardSteps);
+
     } else {
         stepStaticDetector->reset();
     }
     if (!stepGyroBias) {
-        stepGyroBias = std::make_shared<GyroBias>();
+        stepGyroBias = std::make_shared<GyroBias>(500, true);
     } else {
         stepGyroBias->reset();
     }

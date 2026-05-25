@@ -32,7 +32,12 @@ class VQFParams(TypedDict):
     magMinUndisturbedTime: float
     magMaxRejectionTime: float
     magRejectionFactor: float
-    useAccStep: bool
+    useJustaFilter: bool
+    staticAccThreshold: float
+    staticGyrThreshold: float
+    staticMagThreshold: float
+    staticWindowSize: int
+    staticBlockForwardSteps: int
 
 
 class VQFCoefficients(TypedDict):
@@ -189,7 +194,12 @@ class VQF:
         magMinUndisturbedTime: float | None = None,
         magMaxRejectionTime: float | None = None,
         magRejectionFactor: float | None = None,
-        useAccStep: bool | None = None,
+        useJustaFilter: bool | None = None,
+        staticAccThreshold: float | None = None,
+        staticGyrThreshold: float | None = None,
+        staticMagThreshold: float | None = None,
+        staticWindowSize: int | None = None,
+        staticBlockForwardSteps: int | None = None
     ) -> None: ...
 
     def updateGyr(self, gyr: np.ndarray) -> None: ...

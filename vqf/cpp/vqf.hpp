@@ -272,9 +272,17 @@ struct VQFParams
      */
     vqf_real_t magRejectionFactor;
 
+    bool useJustaFilter;
+
     bool useAccStep;
     
     bool useAccStepWhole;
+
+    vqf_real_t staticAccThreshold;
+    vqf_real_t staticGyrThreshold= vqf_real_t(0.015);
+    vqf_real_t staticMagThreshold= vqf_real_t(3.0);
+    size_t staticWindowSize=3;
+    size_t staticBlockForwardSteps=500;
 };
 
 /**
