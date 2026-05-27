@@ -7,6 +7,8 @@
 
 #include <stddef.h>
 #include <memory>
+#include <assert.h>
+#include <vector>
 
 // #define VQF_SINGLE_PRECISION
 // #define VQF_NO_MOTION_BIAS_ESTIMATION
@@ -23,6 +25,43 @@ typedef double vqf_real_t;
 #else
 typedef float vqf_real_t;
 #endif
+
+
+class CascadeLP
+{
+public:
+    CascadeLP(vqf_real_t alpha, size_t stages, vqf_real_t y0 = vqf_real_t(0.0))
+        : alpha_(alpha), y_(stages, y0)
+    {
+        assert(stages >= 1);
+    }
+
+    vqf_real_t update(vqf_real_t x)
+    {
+        vqf_real_t v = x;
+        for (size_t i = 0; i < y_.size(); i++)
+        {
+            vqf_real_t yi = y_[i];
+            yi += alpha_ * (v - yi);
+            y_[i] = yi;
+            v = yi;
+        }
+        return v;
+    }
+
+private:
+    vqf_real_t alpha_;
+    std::vector<vqf_real_t> y_;
+};
+
+class LP4 : public CascadeLP
+{
+public:
+    explicit LP4(vqf_real_t alpha, vqf_real_t y0 = vqf_real_t(0.0))
+        : CascadeLP(alpha, 4, y0)
+    {
+    }
+};
 
 /**
  * @brief Struct containing all tuning parameters used by the VQF class.
@@ -277,6 +316,8 @@ struct VQFParams
     bool useAccStep;
     
     bool useAccStepWhole;
+
+    bool useAccLp;
 
     vqf_real_t staticAccThreshold;
     vqf_real_t staticGyrThreshold= vqf_real_t(0.015);
@@ -707,7 +748,8 @@ public:
     void initFromAccMag(const vqf_real_t acc[3], const vqf_real_t mag[3], vqf_real_t quat_out[4]);
 
     void update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope[3],
-         const vqf_real_t accelerometer[3], const vqf_real_t magnetometer[3], vqf_real_t dt, vqf_real_t w_acc, vqf_real_t w_mag, bool linMag, bool wholeMag, bool no_mag, vqf_real_t quat_out[4]);
+         const vqf_real_t accelerometer[3], const vqf_real_t magnetometer[3], vqf_real_t dt, 
+         vqf_real_t w_acc, vqf_real_t w_mag, bool linMag, bool wholeMag, bool no_mag, LP4 accLp[3], vqf_real_t quat_out[4]);
 
     /**
      * @brief Performs batch update for multiple samples at once.

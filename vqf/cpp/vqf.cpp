@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <limits>
 #include <cmath>
+#include <vector>
 #include <assert.h>
 #include <iostream>
 
@@ -17,41 +18,24 @@
 #define PI 3.14159265358979323846264338327950288
 #define SQRT2 1.41421356237309504880168872420969808
 
-inline vqf_real_t square(vqf_real_t x) { return x*x; }
+inline vqf_real_t square(vqf_real_t x) { return x * x; }
 
 
 VQFParams::VQFParams()
-    : tauAcc(3.0)
-    , tauMag(9.0)
+    : tauAcc(3.0), tauMag(9.0)
 #ifndef VQF_NO_MOTION_BIAS_ESTIMATION
-    , motionBiasEstEnabled(true)
+      ,
+      motionBiasEstEnabled(true)
 #endif
-    , restBiasEstEnabled(true)
-    , magDistRejectionEnabled(true)
-    , biasSigmaInit(0.5)
-    , biasForgettingTime(100.0)
-    , biasClip(2.0)
+      ,
+      restBiasEstEnabled(true), magDistRejectionEnabled(true), biasSigmaInit(0.5), biasForgettingTime(100.0), biasClip(2.0)
 #ifndef VQF_NO_MOTION_BIAS_ESTIMATION
-    , biasSigmaMotion(0.1)
-    , biasVerticalForgettingFactor(0.0001)
+      ,
+      biasSigmaMotion(0.1), biasVerticalForgettingFactor(0.0001)
 #endif
-    , biasSigmaRest(0.03)
-    , restMinT(1.5)
-    , restFilterTau(0.5)
-    , restThGyr(2.0)
-    , restThAcc(0.5)
-    , magCurrentTau(0.05)
-    , magRefTau(20.0)
-    , magNormTh(0.1)
-    , magDipTh(10.0)
-    , magNewTime(20.0)
-    , magNewFirstTime(5.0)
-    , magNewMinGyr(20.0)
-    , magMinUndisturbedTime(0.5)
-    , magMaxRejectionTime(60.0)
-    , magRejectionFactor(2.0)
+      ,
+      biasSigmaRest(0.03), restMinT(1.5), restFilterTau(0.5), restThGyr(2.0), restThAcc(0.5), magCurrentTau(0.05), magRefTau(20.0), magNormTh(0.1), magDipTh(10.0), magNewTime(20.0), magNewFirstTime(5.0), magNewMinGyr(20.0), magMinUndisturbedTime(0.5), magMaxRejectionTime(60.0), magRejectionFactor(2.0)
 {
-
 }
 
 VQF::VQF(vqf_real_t gyrTs, vqf_real_t accTs, vqf_real_t magTs)
@@ -76,32 +60,32 @@ VQF::VQF(const VQFParams &params, vqf_real_t gyrTs, vqf_real_t accTs, vqf_real_t
 void VQF::updateGyr(const vqf_real_t gyr[3])
 {
     // rest detection
-    if (params.restBiasEstEnabled || params.magDistRejectionEnabled) {
+    if (params.restBiasEstEnabled || params.magDistRejectionEnabled)
+    {
         filterVec(gyr, 3, params.restFilterTau, coeffs.gyrTs, coeffs.restGyrLpB, coeffs.restGyrLpA,
                   state.restGyrLpState, state.restLastGyrLp);
 
-        state.restLastSquaredDeviations[0] = square(gyr[0] - state.restLastGyrLp[0])
-                + square(gyr[1] - state.restLastGyrLp[1]) + square(gyr[2] - state.restLastGyrLp[2]);
+        state.restLastSquaredDeviations[0] = square(gyr[0] - state.restLastGyrLp[0]) + square(gyr[1] - state.restLastGyrLp[1]) + square(gyr[2] - state.restLastGyrLp[2]);
 
-        vqf_real_t biasClip = params.biasClip*vqf_real_t(PI/180.0);
-        if (state.restLastSquaredDeviations[0] >= square(params.restThGyr*vqf_real_t(PI/180.0))
-                || std::fabs(state.restLastGyrLp[0]) > biasClip || std::fabs(state.restLastGyrLp[1]) > biasClip
-                || std::fabs(state.restLastGyrLp[2]) > biasClip) {
+        vqf_real_t biasClip = params.biasClip * vqf_real_t(PI / 180.0);
+        if (state.restLastSquaredDeviations[0] >= square(params.restThGyr * vqf_real_t(PI / 180.0)) || std::fabs(state.restLastGyrLp[0]) > biasClip || std::fabs(state.restLastGyrLp[1]) > biasClip || std::fabs(state.restLastGyrLp[2]) > biasClip)
+        {
             state.restT = 0.0;
             state.restDetected = false;
         }
     }
 
     // remove estimated gyro bias
-    vqf_real_t gyrNoBias[3] = {gyr[0]-state.bias[0], gyr[1]-state.bias[1], gyr[2]-state.bias[2]};
+    vqf_real_t gyrNoBias[3] = {gyr[0] - state.bias[0], gyr[1] - state.bias[1], gyr[2] - state.bias[2]};
 
     // gyroscope prediction step
     vqf_real_t gyrNorm = norm(gyrNoBias, 3);
     vqf_real_t angle = gyrNorm * coeffs.gyrTs;
-    if (gyrNorm > EPS) {
-        vqf_real_t c = std::cos(angle/2);
-        vqf_real_t s = std::sin(angle/2)/gyrNorm;
-        vqf_real_t gyrStepQuat[4] = {c, s*gyrNoBias[0], s*gyrNoBias[1], s*gyrNoBias[2]};
+    if (gyrNorm > EPS)
+    {
+        vqf_real_t c = std::cos(angle / 2);
+        vqf_real_t s = std::sin(angle / 2) / gyrNorm;
+        vqf_real_t gyrStepQuat[4] = {c, s * gyrNoBias[0], s * gyrNoBias[1], s * gyrNoBias[2]};
         quatMultiply(state.gyrQuat, gyrStepQuat, state.gyrQuat);
         normalize(state.gyrQuat, 4);
     }
@@ -110,24 +94,29 @@ void VQF::updateGyr(const vqf_real_t gyr[3])
 void VQF::updateAcc(const vqf_real_t acc[3])
 {
     // ignore [0 0 0] samples
-    if (acc[0] == vqf_real_t(0.0) && acc[1] == vqf_real_t(0.0) && acc[2] == vqf_real_t(0.0)) {
+    if (acc[0] == vqf_real_t(0.0) && acc[1] == vqf_real_t(0.0) && acc[2] == vqf_real_t(0.0))
+    {
         return;
     }
 
     // rest detection
-    if (params.restBiasEstEnabled) {
+    if (params.restBiasEstEnabled)
+    {
         filterVec(acc, 3, params.restFilterTau, coeffs.accTs, coeffs.restAccLpB, coeffs.restAccLpA,
                   state.restAccLpState, state.restLastAccLp);
 
-        state.restLastSquaredDeviations[1] = square(acc[0] - state.restLastAccLp[0])
-                + square(acc[1] - state.restLastAccLp[1]) + square(acc[2] - state.restLastAccLp[2]);
+        state.restLastSquaredDeviations[1] = square(acc[0] - state.restLastAccLp[0]) + square(acc[1] - state.restLastAccLp[1]) + square(acc[2] - state.restLastAccLp[2]);
 
-        if (state.restLastSquaredDeviations[1] >= square(params.restThAcc)) {
+        if (state.restLastSquaredDeviations[1] >= square(params.restThAcc))
+        {
             state.restT = 0.0;
             state.restDetected = false;
-        } else {
+        }
+        else
+        {
             state.restT += coeffs.accTs;
-            if (state.restT >= params.restMinT) {
+            if (state.restT >= params.restMinT)
+            {
                 state.restDetected = true;
             }
         }
@@ -145,13 +134,16 @@ void VQF::updateAcc(const vqf_real_t acc[3])
 
     // inclination correction
     vqf_real_t accCorrQuat[4];
-    vqf_real_t q_w = std::sqrt((accEarth[2]+1)/2);
-    if (q_w > vqf_real_t(1e-6)) {
+    vqf_real_t q_w = std::sqrt((accEarth[2] + 1) / 2);
+    if (q_w > vqf_real_t(1e-6))
+    {
         accCorrQuat[0] = q_w;
-        accCorrQuat[1] = vqf_real_t(0.5)*accEarth[1]/q_w;
-        accCorrQuat[2] = vqf_real_t(-0.5)*accEarth[0]/q_w;
+        accCorrQuat[1] = vqf_real_t(0.5) * accEarth[1] / q_w;
+        accCorrQuat[2] = vqf_real_t(-0.5) * accEarth[0] / q_w;
         accCorrQuat[3] = 0;
-    } else {
+    }
+    else
+    {
         // to avoid numeric issues when acc is close to [0 0 -1], i.e. the correction step is close (<= 0.00011°) to 180°:
         accCorrQuat[0] = 0;
         accCorrQuat[1] = 1;
@@ -162,12 +154,13 @@ void VQF::updateAcc(const vqf_real_t acc[3])
     normalize(state.accQuat, 4);
 
     // calculate correction angular rate to facilitate debugging
-    state.lastAccCorrAngularRate = std::acos(accEarth[2])/coeffs.accTs;
+    state.lastAccCorrAngularRate = std::acos(accEarth[2]) / coeffs.accTs;
 
     // bias estimation
 #ifndef VQF_NO_MOTION_BIAS_ESTIMATION
-    if (params.motionBiasEstEnabled || params.restBiasEstEnabled) {
-        vqf_real_t biasClip = params.biasClip*vqf_real_t(PI/180.0);
+    if (params.motionBiasEstEnabled || params.restBiasEstEnabled)
+    {
+        vqf_real_t biasClip = params.biasClip * vqf_real_t(PI / 180.0);
 
         vqf_real_t accGyrQuat[4];
         vqf_real_t R[9];
@@ -175,19 +168,19 @@ void VQF::updateAcc(const vqf_real_t acc[3])
 
         // get rotation matrix corresponding to accGyrQuat
         getQuat6D(accGyrQuat);
-        R[0] = 1 - 2*square(accGyrQuat[2]) - 2*square(accGyrQuat[3]); // r11
-        R[1] = 2*(accGyrQuat[2]*accGyrQuat[1] - accGyrQuat[0]*accGyrQuat[3]); // r12
-        R[2] = 2*(accGyrQuat[0]*accGyrQuat[2] + accGyrQuat[3]*accGyrQuat[1]); // r13
-        R[3] = 2*(accGyrQuat[0]*accGyrQuat[3] + accGyrQuat[2]*accGyrQuat[1]); // r21
-        R[4] = 1 - 2*square(accGyrQuat[1]) - 2*square(accGyrQuat[3]); // r22
-        R[5] = 2*(accGyrQuat[2]*accGyrQuat[3] - accGyrQuat[1]*accGyrQuat[0]); // r23
-        R[6] = 2*(accGyrQuat[3]*accGyrQuat[1] - accGyrQuat[0]*accGyrQuat[2]); // r31
-        R[7] = 2*(accGyrQuat[0]*accGyrQuat[1] + accGyrQuat[3]*accGyrQuat[2]); // r32
-        R[8] = 1 - 2*square(accGyrQuat[1]) - 2*square(accGyrQuat[2]); // r33
+        R[0] = 1 - 2 * square(accGyrQuat[2]) - 2 * square(accGyrQuat[3]);           // r11
+        R[1] = 2 * (accGyrQuat[2] * accGyrQuat[1] - accGyrQuat[0] * accGyrQuat[3]); // r12
+        R[2] = 2 * (accGyrQuat[0] * accGyrQuat[2] + accGyrQuat[3] * accGyrQuat[1]); // r13
+        R[3] = 2 * (accGyrQuat[0] * accGyrQuat[3] + accGyrQuat[2] * accGyrQuat[1]); // r21
+        R[4] = 1 - 2 * square(accGyrQuat[1]) - 2 * square(accGyrQuat[3]);           // r22
+        R[5] = 2 * (accGyrQuat[2] * accGyrQuat[3] - accGyrQuat[1] * accGyrQuat[0]); // r23
+        R[6] = 2 * (accGyrQuat[3] * accGyrQuat[1] - accGyrQuat[0] * accGyrQuat[2]); // r31
+        R[7] = 2 * (accGyrQuat[0] * accGyrQuat[1] + accGyrQuat[3] * accGyrQuat[2]); // r32
+        R[8] = 1 - 2 * square(accGyrQuat[1]) - 2 * square(accGyrQuat[2]);           // r33
 
         // calculate R*b_hat (only the x and y component, as z is not needed)
-        biasLp[0] = R[0]*state.bias[0] + R[1]*state.bias[1] + R[2]*state.bias[2];
-        biasLp[1] = R[3]*state.bias[0] + R[4]*state.bias[1] + R[5]*state.bias[2];
+        biasLp[0] = R[0] * state.bias[0] + R[1] * state.bias[1] + R[2] * state.bias[2];
+        biasLp[1] = R[3] * state.bias[0] + R[4] * state.bias[1] + R[5] * state.bias[2];
 
         // low-pass filter R and R*b_hat
         filterVec(R, 9, params.tauAcc, coeffs.accTs, coeffs.accLpB, coeffs.accLpA, state.motionBiasEstRLpState, R);
@@ -197,35 +190,44 @@ void VQF::updateAcc(const vqf_real_t acc[3])
         // set measurement error and covariance for the respective Kalman filter update
         vqf_real_t w[3];
         vqf_real_t e[3];
-        if (state.restDetected && params.restBiasEstEnabled) {
+        if (state.restDetected && params.restBiasEstEnabled)
+        {
             e[0] = state.restLastGyrLp[0] - state.bias[0];
             e[1] = state.restLastGyrLp[1] - state.bias[1];
             e[2] = state.restLastGyrLp[2] - state.bias[2];
             matrix3SetToScaledIdentity(1.0, R);
-            std::fill(w, w+3, coeffs.biasRestW);
-        } else if (params.motionBiasEstEnabled) {
-            e[0] = -accEarth[1]/coeffs.accTs + biasLp[0] - R[0]*state.bias[0] - R[1]*state.bias[1] - R[2]*state.bias[2];
-            e[1] = accEarth[0]/coeffs.accTs + biasLp[1] - R[3]*state.bias[0] - R[4]*state.bias[1] - R[5]*state.bias[2];
-            e[2] = - R[6]*state.bias[0] - R[7]*state.bias[1] - R[8]*state.bias[2];
+            std::fill(w, w + 3, coeffs.biasRestW);
+        }
+        else if (params.motionBiasEstEnabled)
+        {
+            e[0] = -accEarth[1] / coeffs.accTs + biasLp[0] - R[0] * state.bias[0] - R[1] * state.bias[1] - R[2] * state.bias[2];
+            e[1] = accEarth[0] / coeffs.accTs + biasLp[1] - R[3] * state.bias[0] - R[4] * state.bias[1] - R[5] * state.bias[2];
+            e[2] = -R[6] * state.bias[0] - R[7] * state.bias[1] - R[8] * state.bias[2];
             w[0] = coeffs.biasMotionW;
             w[1] = coeffs.biasMotionW;
             w[2] = coeffs.biasVerticalW;
-        } else {
-            std::fill(w, w+3, -1); // disable update
+        }
+        else
+        {
+            std::fill(w, w + 3, -1); // disable update
         }
 
         // Kalman filter update
         // step 1: P = P + V (also increase covariance if there is no measurement update!)
-        if (state.biasP[0] < coeffs.biasP0) {
+        if (state.biasP[0] < coeffs.biasP0)
+        {
             state.biasP[0] += coeffs.biasV;
         }
-        if (state.biasP[4] < coeffs.biasP0) {
+        if (state.biasP[4] < coeffs.biasP0)
+        {
             state.biasP[4] += coeffs.biasV;
         }
-        if (state.biasP[8] < coeffs.biasP0) {
+        if (state.biasP[8] < coeffs.biasP0)
+        {
             state.biasP[8] += coeffs.biasV;
         }
-        if (w[0] >= 0) {
+        if (w[0] >= 0)
+        {
             // clip disagreement to -2..2 °/s
             // (this also effectively limits the harm done by the first inclination correction step)
             clip(e, 3, -biasClip, biasClip);
@@ -233,23 +235,24 @@ void VQF::updateAcc(const vqf_real_t acc[3])
             // step 2: K = P R^T inv(W + R P R^T)
             vqf_real_t K[9];
             matrix3MultiplyTpsSecond(state.biasP, R, K); // K = P R^T
-            matrix3Multiply(R, K, K); // K = R P R^T
+            matrix3Multiply(R, K, K);                    // K = R P R^T
             K[0] += w[0];
             K[4] += w[1];
-            K[8] += w[2]; // K = W + R P R^T
-            matrix3Inv(K, K); // K = inv(W + R P R^T)
-            matrix3MultiplyTpsFirst(R, K, K); // K = R^T inv(W + R P R^T)
+            K[8] += w[2];                       // K = W + R P R^T
+            matrix3Inv(K, K);                   // K = inv(W + R P R^T)
+            matrix3MultiplyTpsFirst(R, K, K);   // K = R^T inv(W + R P R^T)
             matrix3Multiply(state.biasP, K, K); // K = P R^T inv(W + R P R^T)
 
             // step 3: bias = bias + K (y - R bias) = bias + K e
-            state.bias[0] += K[0]*e[0] + K[1]*e[1] + K[2]*e[2];
-            state.bias[1] += K[3]*e[0] + K[4]*e[1] + K[5]*e[2];
-            state.bias[2] += K[6]*e[0] + K[7]*e[1] + K[8]*e[2];
+            state.bias[0] += K[0] * e[0] + K[1] * e[1] + K[2] * e[2];
+            state.bias[1] += K[3] * e[0] + K[4] * e[1] + K[5] * e[2];
+            state.bias[2] += K[6] * e[0] + K[7] * e[1] + K[8] * e[2];
 
             // step 4: P = P - K R P
-            matrix3Multiply(K, R, K); // K = K R
+            matrix3Multiply(K, R, K);           // K = K R
             matrix3Multiply(K, state.biasP, K); // K = K R P
-            for(size_t i = 0; i < 9; i++) {
+            for (size_t i = 0; i < 9; i++)
+            {
                 state.biasP[i] -= K[i];
             }
 
@@ -259,12 +262,15 @@ void VQF::updateAcc(const vqf_real_t acc[3])
     }
 #else
     // simplified implementation of bias estimation for the special case in which only rest bias estimation is enabled
-    if (params.restBiasEstEnabled) {
-        vqf_real_t biasClip = params.biasClip*vqf_real_t(PI/180.0);
-        if (state.biasP < coeffs.biasP0) {
+    if (params.restBiasEstEnabled)
+    {
+        vqf_real_t biasClip = params.biasClip * vqf_real_t(PI / 180.0);
+        if (state.biasP < coeffs.biasP0)
+        {
             state.biasP += coeffs.biasV;
         }
-        if (state.restDetected) {
+        if (state.restDetected)
+        {
             vqf_real_t e[3];
             e[0] = state.restLastGyrLp[0] - state.bias[0];
             e[1] = state.restLastGyrLp[1] - state.bias[1];
@@ -275,13 +281,13 @@ void VQF::updateAcc(const vqf_real_t acc[3])
             // (this version only uses the first entry of P as P is diagonal and all diagonal elements are the same)
             // step 1: P = P + V (done above!)
             // step 2: K = P R^T inv(W + R P R^T)
-            vqf_real_t k = state.biasP/(coeffs.biasRestW + state.biasP);
+            vqf_real_t k = state.biasP / (coeffs.biasRestW + state.biasP);
             // step 3: bias = bias + K (y - R bias) = bias + K e
-            state.bias[0] += k*e[0];
-            state.bias[1] += k*e[1];
-            state.bias[2] += k*e[2];
+            state.bias[0] += k * e[0];
+            state.bias[1] += k * e[1];
+            state.bias[2] += k * e[2];
             // step 4: P = P - K R P
-            state.biasP -= k*state.biasP;
+            state.biasP -= k * state.biasP;
             clip(state.bias, 3, -biasClip, biasClip);
         }
     }
@@ -291,7 +297,8 @@ void VQF::updateAcc(const vqf_real_t acc[3])
 void VQF::updateMag(const vqf_real_t mag[3])
 {
     // ignore [0 0 0] samples
-    if (mag[0] == vqf_real_t(0.0) && mag[1] == vqf_real_t(0.0) && mag[2] == vqf_real_t(0.0)) {
+    if (mag[0] == vqf_real_t(0.0) && mag[1] == vqf_real_t(0.0) && mag[2] == vqf_real_t(0.0))
+    {
         return;
     }
 
@@ -302,46 +309,54 @@ void VQF::updateMag(const vqf_real_t mag[3])
     getQuat6D(accGyrQuat);
     quatRotate(accGyrQuat, mag, magEarth);
 
-    if (params.magDistRejectionEnabled) {
+    if (params.magDistRejectionEnabled)
+    {
         state.magNormDip[0] = norm(magEarth, 3);
-        state.magNormDip[1] = -std::asin(magEarth[2]/state.magNormDip[0]);
+        state.magNormDip[1] = -std::asin(magEarth[2] / state.magNormDip[0]);
 
-        if (params.magCurrentTau > 0) {
+        if (params.magCurrentTau > 0)
+        {
             filterVec(state.magNormDip, 2, params.magCurrentTau, coeffs.magTs, coeffs.magNormDipLpB,
                       coeffs.magNormDipLpA, state.magNormDipLpState, state.magNormDip);
         }
 
         // magnetic disturbance detection
-        if (std::fabs(state.magNormDip[0] - state.magRefNorm) < params.magNormTh*state.magRefNorm
-                && std::fabs(state.magNormDip[1] - state.magRefDip) < params.magDipTh*vqf_real_t(PI/180.0)) {
+        if (std::fabs(state.magNormDip[0] - state.magRefNorm) < params.magNormTh * state.magRefNorm && std::fabs(state.magNormDip[1] - state.magRefDip) < params.magDipTh * vqf_real_t(PI / 180.0))
+        {
             state.magUndisturbedT += coeffs.magTs;
-            if (state.magUndisturbedT >= params.magMinUndisturbedTime) {
+            if (state.magUndisturbedT >= params.magMinUndisturbedTime)
+            {
                 state.magDistDetected = false;
-                state.magRefNorm += coeffs.kMagRef*(state.magNormDip[0] - state.magRefNorm);
-                state.magRefDip += coeffs.kMagRef*(state.magNormDip[1] - state.magRefDip);
+                state.magRefNorm += coeffs.kMagRef * (state.magNormDip[0] - state.magRefNorm);
+                state.magRefDip += coeffs.kMagRef * (state.magNormDip[1] - state.magRefDip);
             }
-        } else {
+        }
+        else
+        {
             state.magUndisturbedT = 0.0;
             state.magDistDetected = true;
         }
 
         // new magnetic field acceptance
-        if (std::fabs(state.magNormDip[0] - state.magCandidateNorm) < params.magNormTh*state.magCandidateNorm
-                && std::fabs(state.magNormDip[1] - state.magCandidateDip) < params.magDipTh*vqf_real_t(PI/180.0)) {
-            if (norm(state.restLastGyrLp, 3) >= params.magNewMinGyr*vqf_real_t(PI/180.0)) {
+        if (std::fabs(state.magNormDip[0] - state.magCandidateNorm) < params.magNormTh * state.magCandidateNorm && std::fabs(state.magNormDip[1] - state.magCandidateDip) < params.magDipTh * vqf_real_t(PI / 180.0))
+        {
+            if (norm(state.restLastGyrLp, 3) >= params.magNewMinGyr * vqf_real_t(PI / 180.0))
+            {
                 state.magCandidateT += coeffs.magTs;
             }
-            state.magCandidateNorm += coeffs.kMagRef*(state.magNormDip[0] - state.magCandidateNorm);
-            state.magCandidateDip += coeffs.kMagRef*(state.magNormDip[1] - state.magCandidateDip);
+            state.magCandidateNorm += coeffs.kMagRef * (state.magNormDip[0] - state.magCandidateNorm);
+            state.magCandidateDip += coeffs.kMagRef * (state.magNormDip[1] - state.magCandidateDip);
 
-            if (state.magDistDetected && (state.magCandidateT >= params.magNewTime || (
-                    state.magRefNorm == vqf_real_t(0.0) && state.magCandidateT >= params.magNewFirstTime))) {
+            if (state.magDistDetected && (state.magCandidateT >= params.magNewTime || (state.magRefNorm == vqf_real_t(0.0) && state.magCandidateT >= params.magNewFirstTime)))
+            {
                 state.magRefNorm = state.magCandidateNorm;
                 state.magRefDip = state.magCandidateDip;
                 state.magDistDetected = false;
                 state.magUndisturbedT = params.magMinUndisturbedTime;
             }
-        } else {
+        }
+        else
+        {
             state.magCandidateT = 0.0;
             state.magCandidateNorm = state.magNormDip[0];
             state.magCandidateDip = state.magNormDip[1];
@@ -352,54 +367,70 @@ void VQF::updateMag(const vqf_real_t mag[3])
     state.lastMagDisAngle = std::atan2(magEarth[0], magEarth[1]) - state.delta;
 
     // make sure the disagreement angle is in the range [-pi, pi]
-    if (state.lastMagDisAngle > vqf_real_t(PI)) {
-        state.lastMagDisAngle -= vqf_real_t(2*PI);
-    } else if (state.lastMagDisAngle < vqf_real_t(-PI)) {
-        state.lastMagDisAngle += vqf_real_t(2*PI);
+    if (state.lastMagDisAngle > vqf_real_t(PI))
+    {
+        state.lastMagDisAngle -= vqf_real_t(2 * PI);
+    }
+    else if (state.lastMagDisAngle < vqf_real_t(-PI))
+    {
+        state.lastMagDisAngle += vqf_real_t(2 * PI);
     }
 
     vqf_real_t k = coeffs.kMag;
 
-    if (params.magDistRejectionEnabled) {
+    if (params.magDistRejectionEnabled)
+    {
         // magnetic disturbance rejection
-        if (state.magDistDetected) {
-            if (state.magRejectT <= params.magMaxRejectionTime) {
+        if (state.magDistDetected)
+        {
+            if (state.magRejectT <= params.magMaxRejectionTime)
+            {
                 state.magRejectT += coeffs.magTs;
                 k = 0;
-            } else {
+            }
+            else
+            {
                 k /= params.magRejectionFactor;
             }
-        } else {
-            state.magRejectT = (std::max)(state.magRejectT - params.magRejectionFactor*coeffs.magTs, vqf_real_t(0.0));
+        }
+        else
+        {
+            state.magRejectT = (std::max)(state.magRejectT - params.magRejectionFactor * coeffs.magTs, vqf_real_t(0.0));
         }
     }
 
     // ensure fast initial convergence
-    if (state.kMagInit != vqf_real_t(0.0)) {
+    if (state.kMagInit != vqf_real_t(0.0))
+    {
         // make sure that the gain k is at least 1/N, N=1,2,3,... in the first few samples
-        if (k < state.kMagInit) {
+        if (k < state.kMagInit)
+        {
             k = state.kMagInit;
         }
 
         // iterative expression to calculate 1/N
-        state.kMagInit = state.kMagInit/(state.kMagInit+1);
+        state.kMagInit = state.kMagInit / (state.kMagInit + 1);
 
         // disable if t > tauMag
-        if (state.kMagInit*params.tauMag < coeffs.magTs) {
+        if (state.kMagInit * params.tauMag < coeffs.magTs)
+        {
             state.kMagInit = 0.0;
         }
     }
 
     // first-order filter step
-    state.delta += k*state.lastMagDisAngle;
+    state.delta += k * state.lastMagDisAngle;
     // calculate correction angular rate to facilitate debugging
-    state.lastMagCorrAngularRate = k*state.lastMagDisAngle/coeffs.magTs;
+    state.lastMagCorrAngularRate = k * state.lastMagDisAngle / coeffs.magTs;
 
     // make sure delta is in the range [-pi, pi]
-    if (state.delta > vqf_real_t(PI)) {
-        state.delta -= vqf_real_t(2*PI);
-    } else if (state.delta < vqf_real_t(-PI)) {
-        state.delta += vqf_real_t(2*PI);
+    if (state.delta > vqf_real_t(PI))
+    {
+        state.delta -= vqf_real_t(2 * PI);
+    }
+    else if (state.delta < vqf_real_t(-PI))
+    {
+        state.delta += vqf_real_t(2 * PI);
     }
 }
 
@@ -416,11 +447,11 @@ void VQF::update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_rea
     updateMag(mag);
 }
 
-
 inline bool VQF::normalize3d(const vqf_real_t in[3], vqf_real_t out[3])
 {
-    const vqf_real_t n = std::sqrt(in[0]*in[0] + in[1]*in[1] + in[2]*in[2]);
-    if (n <= vqf_real_t(1e-10)) {
+    const vqf_real_t n = std::sqrt(in[0] * in[0] + in[1] * in[1] + in[2] * in[2]);
+    if (n <= vqf_real_t(1e-10))
+    {
         out[0] = out[1] = out[2] = vqf_real_t(0.0);
         return false;
     }
@@ -443,22 +474,23 @@ inline void VQF::integrateEulerStep(const vqf_real_t q[4], const vqf_real_t gyr[
     const vqf_real_t wz = gyr[2];
 
     // Euler integration: q_new = q + q_dot * dt
-    const vqf_real_t q_dot_w = vqf_real_t(0.5) * (-x*wx - y*wy - z*wz);
-    const vqf_real_t q_dot_x = vqf_real_t(0.5) * ( w*wx + y*wz - z*wy);
-    const vqf_real_t q_dot_y = vqf_real_t(0.5) * ( w*wy - x*wz + z*wx);
-    const vqf_real_t q_dot_z = vqf_real_t(0.5) * ( w*wz + x*wy - y*wx);
+    const vqf_real_t q_dot_w = vqf_real_t(0.5) * (-x * wx - y * wy - z * wz);
+    const vqf_real_t q_dot_x = vqf_real_t(0.5) * (w * wx + y * wz - z * wy);
+    const vqf_real_t q_dot_y = vqf_real_t(0.5) * (w * wy - x * wz + z * wx);
+    const vqf_real_t q_dot_z = vqf_real_t(0.5) * (w * wz + x * wy - y * wx);
 
-    out[0] = w + q_dot_w*dt;
-    out[1] = x + q_dot_x*dt;
-    out[2] = y + q_dot_y*dt;
-    out[3] = z + q_dot_z*dt;
+    out[0] = w + q_dot_w * dt;
+    out[1] = x + q_dot_x * dt;
+    out[2] = y + q_dot_y * dt;
+    out[3] = z + q_dot_z * dt;
     VQF::normalize(out, 4);
 }
 
 static bool normalize3dLocal(const vqf_real_t in[3], vqf_real_t out[3])
 {
-    const vqf_real_t n = std::sqrt(in[0]*in[0] + in[1]*in[1] + in[2]*in[2]);
-    if (n <= vqf_real_t(1e-12)) {
+    const vqf_real_t n = std::sqrt(in[0] * in[0] + in[1] * in[1] + in[2] * in[2]);
+    if (n <= vqf_real_t(1e-12))
+    {
         out[0] = out[1] = out[2] = vqf_real_t(0.0);
         return false;
     }
@@ -471,10 +503,10 @@ static bool normalize3dLocal(const vqf_real_t in[3], vqf_real_t out[3])
 
 static void projectOntoPlane(const vqf_real_t v[3], const vqf_real_t n_unit[3], vqf_real_t out[3])
 {
-    const vqf_real_t scale = v[0]*n_unit[0] + v[1]*n_unit[1] + v[2]*n_unit[2];
-    out[0] = v[0] - scale*n_unit[0];
-    out[1] = v[1] - scale*n_unit[1];
-    out[2] = v[2] - scale*n_unit[2];
+    const vqf_real_t scale = v[0] * n_unit[0] + v[1] * n_unit[1] + v[2] * n_unit[2];
+    out[0] = v[0] - scale * n_unit[0];
+    out[1] = v[1] - scale * n_unit[1];
+    out[2] = v[2] - scale * n_unit[2];
 }
 
 static vqf_real_t signedAngleAroundAxis(const vqf_real_t from[3],
@@ -482,12 +514,11 @@ static vqf_real_t signedAngleAroundAxis(const vqf_real_t from[3],
                                         const vqf_real_t axis_unit[3])
 {
     const vqf_real_t c[3] = {
-        from[1]*to[2] - from[2]*to[1],
-        from[2]*to[0] - from[0]*to[2],
-        from[0]*to[1] - from[1]*to[0]
-    };
-    const vqf_real_t sin_theta = axis_unit[0]*c[0] + axis_unit[1]*c[1] + axis_unit[2]*c[2];
-    const vqf_real_t cos_theta = from[0]*to[0] + from[1]*to[1] + from[2]*to[2];
+        from[1] * to[2] - from[2] * to[1],
+        from[2] * to[0] - from[0] * to[2],
+        from[0] * to[1] - from[1] * to[0]};
+    const vqf_real_t sin_theta = axis_unit[0] * c[0] + axis_unit[1] * c[1] + axis_unit[2] * c[2];
+    const vqf_real_t cos_theta = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
     return std::atan2(sin_theta, cos_theta);
 }
 
@@ -495,27 +526,35 @@ static bool quatFromTwoVectors(const vqf_real_t from[3], const vqf_real_t to[3],
 {
     vqf_real_t f[3];
     vqf_real_t t[3];
-    if (!normalize3dLocal(from, f) || !normalize3dLocal(to, t)) {
+    if (!normalize3dLocal(from, f) || !normalize3dLocal(to, t))
+    {
         return false;
     }
 
-    const vqf_real_t dot = f[0]*t[0] + f[1]*t[1] + f[2]*t[2];
-    if (dot < vqf_real_t(-1.0) + vqf_real_t(1e-12)) {
+    const vqf_real_t dot = f[0] * t[0] + f[1] * t[1] + f[2] * t[2];
+    if (dot < vqf_real_t(-1.0) + vqf_real_t(1e-12))
+    {
         vqf_real_t axis[3];
-        if (std::fabs(f[0]) < std::fabs(f[1]) && std::fabs(f[0]) < std::fabs(f[2])) {
+        if (std::fabs(f[0]) < std::fabs(f[1]) && std::fabs(f[0]) < std::fabs(f[2]))
+        {
             axis[0] = vqf_real_t(0.0);
             axis[1] = -f[2];
             axis[2] = f[1];
-        } else if (std::fabs(f[1]) < std::fabs(f[2])) {
+        }
+        else if (std::fabs(f[1]) < std::fabs(f[2]))
+        {
             axis[0] = -f[2];
             axis[1] = vqf_real_t(0.0);
             axis[2] = f[0];
-        } else {
+        }
+        else
+        {
             axis[0] = -f[1];
             axis[1] = f[0];
             axis[2] = vqf_real_t(0.0);
         }
-        if (!normalize3dLocal(axis, axis)) {
+        if (!normalize3dLocal(axis, axis))
+        {
             out[0] = vqf_real_t(1.0);
             out[1] = out[2] = out[3] = vqf_real_t(0.0);
             return true;
@@ -528,10 +567,9 @@ static bool quatFromTwoVectors(const vqf_real_t from[3], const vqf_real_t to[3],
     }
 
     const vqf_real_t cross[3] = {
-        f[1]*t[2] - f[2]*t[1],
-        f[2]*t[0] - f[0]*t[2],
-        f[0]*t[1] - f[1]*t[0]
-    };
+        f[1] * t[2] - f[2] * t[1],
+        f[2] * t[0] - f[0] * t[2],
+        f[0] * t[1] - f[1] * t[0]};
     out[0] = vqf_real_t(1.0) + dot;
     out[1] = cross[0];
     out[2] = cross[1];
@@ -547,13 +585,15 @@ void VQF::initFromAccMag(const vqf_real_t acc[3], const vqf_real_t mag[3], vqf_r
 
     vqf_real_t accNorm[3];
     vqf_real_t magNorm[3];
-    if (!normalize3d(acc, accNorm) || !normalize3d(mag, magNorm)) {
+    if (!normalize3d(acc, accNorm) || !normalize3d(mag, magNorm))
+    {
         quatSetToIdentity(quat_out);
         return;
     }
 
     vqf_real_t q0[4];
-    if (!quatFromTwoVectors(accNorm, gravityRef, q0)) {
+    if (!quatFromTwoVectors(accNorm, gravityRef, q0))
+    {
         quatSetToIdentity(quat_out);
         return;
     }
@@ -566,7 +606,8 @@ void VQF::initFromAccMag(const vqf_real_t acc[3], const vqf_real_t mag[3], vqf_r
     projectOntoPlane(magAligned, gravityRef, magAlignedH);
     projectOntoPlane(magRef, gravityRef, magRefH);
 
-    if (norm(magAlignedH, 3) < vqf_real_t(1e-12) || norm(magRefH, 3) < vqf_real_t(1e-12)) {
+    if (norm(magAlignedH, 3) < vqf_real_t(1e-12) || norm(magRefH, 3) < vqf_real_t(1e-12))
+    {
         std::copy(q0, q0 + 4, quat_out);
         normalize(quat_out, 4);
         return;
@@ -582,45 +623,56 @@ void VQF::initFromAccMag(const vqf_real_t acc[3], const vqf_real_t mag[3], vqf_r
         std::cos(halfTheta),
         gravityRef[0] * s,
         gravityRef[1] * s,
-        gravityRef[2] * s
-    };
+        gravityRef[2] * s};
 
     quatMultiply(yaw, q0, quat_out);
     normalize(quat_out, 4);
 }
 
 void VQF::update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope[3],
-                        const vqf_real_t accelerometer[3], const vqf_real_t magnetometer[3],
-                        vqf_real_t dt, vqf_real_t w_acc, vqf_real_t w_mag,
-                        bool linMag, bool wholeMag, bool no_mag,
-                        vqf_real_t quat_out[4])
+                      const vqf_real_t accelerometer[3], const vqf_real_t magnetometer[3],
+                      vqf_real_t dt, vqf_real_t w_acc, vqf_real_t w_mag,
+                      bool linMag, bool wholeMag, bool no_mag, LP4 accLp[3],
+                      vqf_real_t quat_out[4])
 {
     vqf_real_t acc[3];
-    if (!normalize3d(accelerometer, acc)) {
+    if (!normalize3d(accelerometer, acc))
+    {
         std::copy(quaternion, quaternion + 4, quat_out);
         return;
     }
 
     vqf_real_t mag[3] = {vqf_real_t(0.0), vqf_real_t(0.0), vqf_real_t(0.0)};
-    if (!no_mag) {
-        if (!normalize3d(magnetometer, mag)) {
+    if (!no_mag)
+    {
+        if (!normalize3d(magnetometer, mag))
+        {
             std::copy(quaternion, quaternion + 4, quat_out);
             return;
         }
     }
 
-    if (!stepStaticDetector) {
-        stepStaticDetector = std::make_shared<StaticDetector>(params.staticAccThreshold, params.staticGyrThreshold, 
-            params.staticMagThreshold, params.staticWindowSize, params.staticBlockForwardSteps);
+    if (!stepStaticDetector)
+    {
+        stepStaticDetector = std::make_shared<StaticDetector>(params.staticAccThreshold, params.staticGyrThreshold,
+                                                              params.staticMagThreshold, params.staticWindowSize, params.staticBlockForwardSteps);
     }
-    if (!stepGyroBias) {
+    if (!stepGyroBias)
+    {
         stepGyroBias = std::make_shared<GyroBias>(500, true);
     }
     state.restDetected = stepStaticDetector->update(accelerometer, gyroscope, mag);
-    if (state.restDetected) {
+    if (state.restDetected)
+    {
         stepGyroBias->update(gyroscope);
     }
-    const vqf_real_t staticGain = state.restDetected ? vqf_real_t(3.0) : vqf_real_t(1.0);
+    vqf_real_t staticGain = state.restDetected ? vqf_real_t(3.0) : vqf_real_t(1.0);
+    vqf_real_t wAccFin = w_acc;
+
+    if(params.useAccLp){
+        staticGain = staticGain * vqf_real_t(0.1);
+        wAccFin = vqf_real_t(1.0);
+    }
 
     vqf_real_t qp[4];
     vqf_real_t bias[3];
@@ -628,52 +680,64 @@ void VQF::update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope
     vqf_real_t corrected_gyr[3] = {
         gyroscope[0] - bias[0],
         gyroscope[1] - bias[1],
-        gyroscope[2] - bias[2]
-    };
+        gyroscope[2] - bias[2]};
     integrateEulerStep(quaternion, corrected_gyr, dt, qp);
 
     vqf_real_t acc_mes_pred[3];
     VQF::quatRotate(qp, acc, acc_mes_pred);
-    
+
     vqf_real_t acc_cross[3]; // [0,0,1] ref
-    acc_cross[0] = acc_mes_pred[1];
-    acc_cross[1] = -acc_mes_pred[0];
-    acc_cross[2] = 0.0f;
-        
-    const vqf_real_t ca_norm = std::sqrt(acc_cross[0]*acc_cross[0] + acc_cross[1]*acc_cross[1]);
-    if (ca_norm > vqf_real_t(1e-10)) {
-        const vqf_real_t inv = vqf_real_t(1.0) / ca_norm;
-        acc_cross[0] *= inv;
-        acc_cross[1] *= inv;
-    } else {
-        acc_cross[0] = vqf_real_t(0.0);
-        acc_cross[1] = vqf_real_t(0.0);
+    if (params.useAccLp)
+    {
+        acc_cross[0] = accLp[0].update(acc_mes_pred[1]);
+        acc_cross[1] = accLp[1].update(-acc_mes_pred[0]);
+        acc_cross[2] = 0.0f;
+    }
+    else
+    {
+        acc_cross[0] = acc_mes_pred[1];
+        acc_cross[1] = -acc_mes_pred[0];
+        acc_cross[2] = 0.0f;
+
+        const vqf_real_t ca_norm = std::sqrt(acc_cross[0] * acc_cross[0] + acc_cross[1] * acc_cross[1]);
+        if (ca_norm > vqf_real_t(1e-10))
+        {
+            const vqf_real_t inv = vqf_real_t(1.0) / ca_norm;
+            acc_cross[0] *= inv;
+            acc_cross[1] *= inv;
+        }
+        else
+        {
+            acc_cross[0] = vqf_real_t(0.0);
+            acc_cross[1] = vqf_real_t(0.0);
+        }
     }
 
     vqf_real_t mag_step = vqf_real_t(0.0);
 
-    if (!no_mag) {
-        
-        const vqf_real_t mag_pr_x = (1 - 2*qp[2]*qp[2] - 2*qp[3]*qp[3])*mag[0] +
-                                     2 * mag[1]*(qp[2]*qp[1] - qp[0]*qp[3]) + 
-                                     2 * mag[2]*(qp[0]*qp[2] + qp[3]*qp[1]);
-    
+    if (!no_mag)
+    {
+
+        const vqf_real_t mag_pr_x = (1 - 2 * qp[2] * qp[2] - 2 * qp[3] * qp[3]) * mag[0] +
+                                    2 * mag[1] * (qp[2] * qp[1] - qp[0] * qp[3]) +
+                                    2 * mag[2] * (qp[0] * qp[2] + qp[3] * qp[1]);
+
         const vqf_real_t w_mag_half = w_mag * dt * vqf_real_t(0.0215351);
         mag_step = mag_pr_x < vqf_real_t(0.0) ? -w_mag_half : w_mag_half;
     }
 
-    const vqf_real_t w_acc_half = w_acc * staticGain * dt * vqf_real_t(0.103143448);
-    
+    const vqf_real_t w_acc_half = wAccFin * staticGain * dt * vqf_real_t(0.103143448);
+
     const vqf_real_t q_cor[4] = {
-            vqf_real_t(1.0),
-            acc_cross[0]*w_acc_half,
-            acc_cross[1]*w_acc_half,
-            mag_step,
-        };
-        
+        vqf_real_t(1.0),
+        acc_cross[0] * w_acc_half,
+        acc_cross[1] * w_acc_half,
+        mag_step,
+    };
 
     VQF::quatMultiply(q_cor, qp, quat_out);
-    if (quat_out[0] < vqf_real_t(0.0)) {
+    if (quat_out[0] < vqf_real_t(0.0))
+    {
         quat_out[0] = -quat_out[0];
         quat_out[1] = -quat_out[1];
         quat_out[2] = -quat_out[2];
@@ -686,68 +750,94 @@ void VQF::updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_
                       vqf_real_t out6D[], vqf_real_t out9D[], vqf_real_t outDelta[], vqf_real_t outBias[],
                       vqf_real_t outBiasSigma[], bool outRest[], bool outMagDist[])
 {
-    if(params.useJustaFilter) {
+    if (params.useJustaFilter)
+    {
 
-        if (mag) {
-            initFromAccMag(acc+3, mag+3, state.step_quat);
-        } else {
+        const vqf_real_t lpAlpha = (std::max)(vqf_real_t(0.0), (std::min)(vqf_real_t(1.0), params.tauAcc));
+        LP4 accLp[3] = {LP4(lpAlpha), LP4(lpAlpha), LP4(lpAlpha)};
+
+        if (mag)
+        {
+            initFromAccMag(acc + 3, mag + 3, state.step_quat);
+        }
+        else
+        {
             // Initialize from acc only (set inclination, zero heading)
-            initFromAccMag(acc+3, accEarthRef, state.step_quat);
+            initFromAccMag(acc + 3, accEarthRef, state.step_quat);
         }
         stepGyroBias->reset();
-        
-        for (size_t i = 0; i < N; i++) {
-            update_step(state.step_quat, gyr+3*i, acc+3*i, mag+3*i, 
+
+        for (size_t i = 0; i < N; i++)
+        {
+
+            const bool noMag = (mag == nullptr);
+
+            update_step(state.step_quat, gyr + 3 * i, acc + 3 * i, mag + 3 * i,
                         coeffs.gyrTs, params.tauAcc, params.tauMag,
                         true, false,
-                        false, state.step_quat);
-            std::copy(state.step_quat, state.step_quat+4, out9D+4*i);
-            if (outRest) {
+                        noMag, accLp, state.step_quat);
+            if (out9D)
+            {
+                std::copy(state.step_quat, state.step_quat + 4, out9D + 4 * i);
+            }
+            if (outRest)
+            {
                 outRest[i] = state.restDetected;
             }
         }
-    }else{
-        for (size_t i = 0; i < N; i++) {
-        if (mag) {
-            update(gyr+3*i, acc+3*i, mag+3*i);
-        } else {
-            update(gyr+3*i, acc+3*i);
-        }
-        if (out6D) {
-            getQuat6D(out6D+4*i);
-        }
-        if (out9D) {
-            getQuat9D(out9D+4*i);
-        }
-        if (outDelta) {
-            outDelta[i] = state.delta;
-        }
-        if (outBias) {
-            std::copy(state.bias, state.bias+3, outBias+3*i);
-        }
-        if (outBiasSigma) {
-            outBiasSigma[i] = getBiasEstimate(0);
-        }
-        if (outRest) {
-            outRest[i] = state.restDetected;
-        }
-        if (outMagDist) {
-            outMagDist[i] = state.magDistDetected;
+    }
+    else
+    {
+        for (size_t i = 0; i < N; i++)
+        {
+            if (mag)
+            {
+                update(gyr + 3 * i, acc + 3 * i, mag + 3 * i);
+            }
+            else
+            {
+                update(gyr + 3 * i, acc + 3 * i);
+            }
+            if (out6D)
+            {
+                getQuat6D(out6D + 4 * i);
+            }
+            if (out9D)
+            {
+                getQuat9D(out9D + 4 * i);
+            }
+            if (outDelta)
+            {
+                outDelta[i] = state.delta;
+            }
+            if (outBias)
+            {
+                std::copy(state.bias, state.bias + 3, outBias + 3 * i);
+            }
+            if (outBiasSigma)
+            {
+                outBiasSigma[i] = getBiasEstimate(0);
+            }
+            if (outRest)
+            {
+                outRest[i] = state.restDetected;
+            }
+            if (outMagDist)
+            {
+                outMagDist[i] = state.magDistDetected;
+            }
         }
     }
-    }
-
 }
 
 void VQF::setStepQuat(vqf_real_t newstate[4])
 {
-    std::copy(newstate, newstate+4, state.step_quat);
+    std::copy(newstate, newstate + 4, state.step_quat);
 }
-
 
 void VQF::getQuat3D(vqf_real_t out[4]) const
 {
-    std::copy(state.gyrQuat, state.gyrQuat+4, out);
+    std::copy(state.gyrQuat, state.gyrQuat + 4, out);
 }
 
 void VQF::getQuat6D(vqf_real_t out[4]) const
@@ -768,8 +858,9 @@ vqf_real_t VQF::getDelta() const
 
 vqf_real_t VQF::getBiasEstimate(vqf_real_t out[3]) const
 {
-    if (out) {
-        std::copy(state.bias, state.bias+3, out);
+    if (out)
+    {
+        std::copy(state.bias, state.bias + 3, out);
     }
 #ifndef VQF_NO_MOTION_BIAS_ESTIMATION
     // use largest absolute row sum as upper bound estimate for largest eigenvalue (Gershgorin circle theorem)
@@ -782,14 +873,15 @@ vqf_real_t VQF::getBiasEstimate(vqf_real_t out[3]) const
     vqf_real_t P = state.biasP;
 #endif
     // convert standard deviation from 0.01deg to rad
-    return std::sqrt(P)*vqf_real_t(PI/100.0/180.0);
+    return std::sqrt(P) * vqf_real_t(PI / 100.0 / 180.0);
 }
 
 void VQF::setBiasEstimate(vqf_real_t bias[3], vqf_real_t sigma)
 {
-    std::copy(bias, bias+3, state.bias);
-    if (sigma > 0) {
-        vqf_real_t P = square(sigma*vqf_real_t(180.0*100.0/PI));
+    std::copy(bias, bias + 3, state.bias);
+    if (sigma > 0)
+    {
+        vqf_real_t P = square(sigma * vqf_real_t(180.0 * 100.0 / PI));
 #ifndef VQF_NO_MOTION_BIAS_ESTIMATION
         matrix3SetToScaledIdentity(P, state.biasP);
 #else
@@ -810,7 +902,7 @@ bool VQF::getMagDistDetected() const
 
 void VQF::getRelativeRestDeviations(vqf_real_t out[2]) const
 {
-    out[0] = std::sqrt(state.restLastSquaredDeviations[0]) / (params.restThGyr*vqf_real_t(PI/180.0));
+    out[0] = std::sqrt(state.restLastSquaredDeviations[0]) / (params.restThGyr * vqf_real_t(PI / 180.0));
     out[1] = std::sqrt(state.restLastSquaredDeviations[1]) / params.restThAcc;
 }
 
@@ -833,18 +925,20 @@ void VQF::setMagRef(vqf_real_t norm, vqf_real_t dip)
 #ifndef VQF_NO_MOTION_BIAS_ESTIMATION
 void VQF::setMotionBiasEstEnabled(bool enabled)
 {
-    if (params.motionBiasEstEnabled == enabled) {
+    if (params.motionBiasEstEnabled == enabled)
+    {
         return;
     }
     params.motionBiasEstEnabled = enabled;
-    std::fill(state.motionBiasEstRLpState, state.motionBiasEstRLpState + 9*2, NaN);
-    std::fill(state.motionBiasEstBiasLpState, state.motionBiasEstBiasLpState + 2*2, NaN);
+    std::fill(state.motionBiasEstRLpState, state.motionBiasEstRLpState + 9 * 2, NaN);
+    std::fill(state.motionBiasEstBiasLpState, state.motionBiasEstBiasLpState + 2 * 2, NaN);
 }
 #endif
 
 void VQF::setRestBiasEstEnabled(bool enabled)
 {
-    if (params.restBiasEstEnabled == enabled) {
+    if (params.restBiasEstEnabled == enabled)
+    {
         return;
     }
     params.restBiasEstEnabled = enabled;
@@ -852,14 +946,15 @@ void VQF::setRestBiasEstEnabled(bool enabled)
     std::fill(state.restLastSquaredDeviations, state.restLastSquaredDeviations + 3, 0.0);
     state.restT = 0.0;
     std::fill(state.restLastGyrLp, state.restLastGyrLp + 3, 0.0);
-    std::fill(state.restGyrLpState, state.restGyrLpState + 3*2, NaN);
+    std::fill(state.restGyrLpState, state.restGyrLpState + 3 * 2, NaN);
     std::fill(state.restLastAccLp, state.restLastAccLp + 3, 0.0);
-    std::fill(state.restAccLpState, state.restAccLpState + 3*2, NaN);
+    std::fill(state.restAccLpState, state.restAccLpState + 3 * 2, NaN);
 }
 
 void VQF::setMagDistRejectionEnabled(bool enabled)
 {
-    if (params.magDistRejectionEnabled == enabled) {
+    if (params.magDistRejectionEnabled == enabled)
+    {
         return;
     }
     params.magDistRejectionEnabled = enabled;
@@ -871,12 +966,13 @@ void VQF::setMagDistRejectionEnabled(bool enabled)
     state.magCandidateNorm = -1.0;
     state.magCandidateDip = 0.0;
     state.magCandidateT = 0.0;
-    std::fill(state.magNormDipLpState, state.magNormDipLpState + 2*2, NaN);
+    std::fill(state.magNormDipLpState, state.magNormDipLpState + 2 * 2, NaN);
 }
 
 void VQF::setTauAcc(vqf_real_t tauAcc)
 {
-    if (params.tauAcc == tauAcc) {
+    if (params.tauAcc == tauAcc)
+    {
         return;
     }
     params.tauAcc = tauAcc;
@@ -890,19 +986,21 @@ void VQF::setTauAcc(vqf_real_t tauAcc)
     // For R and biasLP, the last value is not saved in the state.
     // Since b0 is small (at reasonable settings), the last output is close to state[0].
     vqf_real_t R[9];
-    for (size_t i = 0; i < 9; i++) {
-        R[i] = state.motionBiasEstRLpState[2*i];
+    for (size_t i = 0; i < 9; i++)
+    {
+        R[i] = state.motionBiasEstRLpState[2 * i];
     }
     filterAdaptStateForCoeffChange(R, 9, coeffs.accLpB, coeffs.accLpA, newB, newA, state.motionBiasEstRLpState);
     vqf_real_t biasLp[2];
-    for (size_t i = 0; i < 2; i++) {
-        biasLp[i] = state.motionBiasEstBiasLpState[2*i];
+    for (size_t i = 0; i < 2; i++)
+    {
+        biasLp[i] = state.motionBiasEstBiasLpState[2 * i];
     }
     filterAdaptStateForCoeffChange(biasLp, 2, coeffs.accLpB, coeffs.accLpA, newB, newA, state.motionBiasEstBiasLpState);
 #endif
 
-    std::copy(newB, newB+3, coeffs.accLpB);
-    std::copy(newA, newA+2, coeffs.accLpA);
+    std::copy(newB, newB + 3, coeffs.accLpB);
+    std::copy(newA, newA + 2, coeffs.accLpA);
 }
 
 void VQF::setTauMag(vqf_real_t tauMag)
@@ -917,22 +1015,22 @@ void VQF::setRestDetectionThresholds(vqf_real_t thGyr, vqf_real_t thAcc)
     params.restThAcc = thAcc;
 }
 
-const VQFParams& VQF::getParams() const
+const VQFParams &VQF::getParams() const
 {
     return params;
 }
 
-const VQFCoefficients& VQF::getCoeffs() const
+const VQFCoefficients &VQF::getCoeffs() const
 {
     return coeffs;
 }
 
-const VQFState& VQF::getState() const
+const VQFState &VQF::getState() const
 {
     return state;
 }
 
-void VQF::setState(const VQFState& state)
+void VQF::setState(const VQFState &state)
 {
     this->state = state;
 }
@@ -946,15 +1044,15 @@ void VQF::resetState()
     state.restDetected = false;
     state.magDistDetected = true;
 
-    std::fill(state.lastAccLp, state.lastAccLp+3, 0);
-    std::fill(state.accLpState, state.accLpState + 3*2, NaN);
+    std::fill(state.lastAccLp, state.lastAccLp + 3, 0);
+    std::fill(state.accLpState, state.accLpState + 3 * 2, NaN);
     state.lastAccCorrAngularRate = 0.0;
 
     state.kMagInit = 1.0;
     state.lastMagDisAngle = 0.0;
     state.lastMagCorrAngularRate = 0.0;
 
-    std::fill(state.bias, state.bias+3, 0);
+    std::fill(state.bias, state.bias + 3, 0);
 #ifndef VQF_NO_MOTION_BIAS_ESTIMATION
     matrix3SetToScaledIdentity(coeffs.biasP0, state.biasP);
 #else
@@ -962,16 +1060,16 @@ void VQF::resetState()
 #endif
 
 #ifndef VQF_NO_MOTION_BIAS_ESTIMATION
-    std::fill(state.motionBiasEstRLpState, state.motionBiasEstRLpState + 9*2, NaN);
-    std::fill(state.motionBiasEstBiasLpState, state.motionBiasEstBiasLpState + 2*2, NaN);
+    std::fill(state.motionBiasEstRLpState, state.motionBiasEstRLpState + 9 * 2, NaN);
+    std::fill(state.motionBiasEstBiasLpState, state.motionBiasEstBiasLpState + 2 * 2, NaN);
 #endif
 
     std::fill(state.restLastSquaredDeviations, state.restLastSquaredDeviations + 3, 0.0);
     state.restT = 0.0;
     std::fill(state.restLastGyrLp, state.restLastGyrLp + 3, 0.0);
-    std::fill(state.restGyrLpState, state.restGyrLpState + 3*2, NaN);
+    std::fill(state.restGyrLpState, state.restGyrLpState + 3 * 2, NaN);
     std::fill(state.restLastAccLp, state.restLastAccLp + 3, 0.0);
-    std::fill(state.restAccLpState, state.restAccLpState + 3*2, NaN);
+    std::fill(state.restAccLpState, state.restAccLpState + 3 * 2, NaN);
 
     state.magRefNorm = 0.0;
     state.magRefDip = 0.0;
@@ -981,16 +1079,17 @@ void VQF::resetState()
     state.magCandidateDip = 0.0;
     state.magCandidateT = 0.0;
     std::fill(state.magNormDip, state.magNormDip + 2, 0);
-    std::fill(state.magNormDipLpState, state.magNormDipLpState + 2*2, NaN);
+    std::fill(state.magNormDipLpState, state.magNormDipLpState + 2 * 2, NaN);
 
-    if (stepStaticDetector) {
+    if (stepStaticDetector)
+    {
         stepStaticDetector->reset();
     }
-    if (stepGyroBias) {
+    if (stepGyroBias)
+    {
         stepGyroBias->reset();
     }
 }
-
 
 void VQF::cross_prod(const vqf_real_t v1[3], const vqf_real_t v2[3], vqf_real_t out[3])
 {
@@ -999,14 +1098,16 @@ void VQF::cross_prod(const vqf_real_t v1[3], const vqf_real_t v2[3], vqf_real_t 
     out[2] = v1[0] * v2[1] - v1[1] * v2[0];
 }
 
-
 void VQF::quatMultiply(const vqf_real_t q1[4], const vqf_real_t q2[4], vqf_real_t out[4])
 {
     vqf_real_t w = q1[0] * q2[0] - q1[1] * q2[1] - q1[2] * q2[2] - q1[3] * q2[3];
     vqf_real_t x = q1[0] * q2[1] + q1[1] * q2[0] + q1[2] * q2[3] - q1[3] * q2[2];
     vqf_real_t y = q1[0] * q2[2] - q1[1] * q2[3] + q1[2] * q2[0] + q1[3] * q2[1];
     vqf_real_t z = q1[0] * q2[3] + q1[1] * q2[2] - q1[2] * q2[1] + q1[3] * q2[0];
-    out[0] = w; out[1] = x; out[2] = y; out[3] = z;
+    out[0] = w;
+    out[1] = x;
+    out[2] = y;
+    out[3] = z;
 }
 
 void VQF::quatConj(const vqf_real_t q[4], vqf_real_t out[4])
@@ -1015,9 +1116,11 @@ void VQF::quatConj(const vqf_real_t q[4], vqf_real_t out[4])
     vqf_real_t x = -q[1];
     vqf_real_t y = -q[2];
     vqf_real_t z = -q[3];
-    out[0] = w; out[1] = x; out[2] = y; out[3] = z;
+    out[0] = w;
+    out[1] = x;
+    out[2] = y;
+    out[3] = z;
 }
-
 
 void VQF::quatSetToIdentity(vqf_real_t out[4])
 {
@@ -1030,28 +1133,34 @@ void VQF::quatSetToIdentity(vqf_real_t out[4])
 void VQF::quatApplyDelta(vqf_real_t q[4], vqf_real_t delta, vqf_real_t out[4])
 {
     // out = quatMultiply([cos(delta/2), 0, 0, sin(delta/2)], q)
-    vqf_real_t c = std::cos(delta/2);
-    vqf_real_t s = std::sin(delta/2);
+    vqf_real_t c = std::cos(delta / 2);
+    vqf_real_t s = std::sin(delta / 2);
     vqf_real_t w = c * q[0] - s * q[3];
     vqf_real_t x = c * q[1] - s * q[2];
     vqf_real_t y = c * q[2] + s * q[1];
     vqf_real_t z = c * q[3] + s * q[0];
-    out[0] = w; out[1] = x; out[2] = y; out[3] = z;
+    out[0] = w;
+    out[1] = x;
+    out[2] = y;
+    out[3] = z;
 }
 
 void VQF::quatRotate(const vqf_real_t q[4], const vqf_real_t v[3], vqf_real_t out[3])
 {
-    vqf_real_t x = (1 - 2*q[2]*q[2] - 2*q[3]*q[3])*v[0] + 2*v[1]*(q[2]*q[1] - q[0]*q[3]) + 2*v[2]*(q[0]*q[2] + q[3]*q[1]);
-    vqf_real_t y = 2*v[0]*(q[0]*q[3] + q[2]*q[1]) + v[1]*(1 - 2*q[1]*q[1] - 2*q[3]*q[3]) + 2*v[2]*(q[2]*q[3] - q[1]*q[0]);
-    vqf_real_t z = 2*v[0]*(q[3]*q[1] - q[0]*q[2]) + 2*v[1]*(q[0]*q[1] + q[3]*q[2]) + v[2]*(1 - 2*q[1]*q[1] - 2*q[2]*q[2]);
-    out[0] = x; out[1] = y; out[2] = z;
+    vqf_real_t x = (1 - 2 * q[2] * q[2] - 2 * q[3] * q[3]) * v[0] + 2 * v[1] * (q[2] * q[1] - q[0] * q[3]) + 2 * v[2] * (q[0] * q[2] + q[3] * q[1]);
+    vqf_real_t y = 2 * v[0] * (q[0] * q[3] + q[2] * q[1]) + v[1] * (1 - 2 * q[1] * q[1] - 2 * q[3] * q[3]) + 2 * v[2] * (q[2] * q[3] - q[1] * q[0]);
+    vqf_real_t z = 2 * v[0] * (q[3] * q[1] - q[0] * q[2]) + 2 * v[1] * (q[0] * q[1] + q[3] * q[2]) + v[2] * (1 - 2 * q[1] * q[1] - 2 * q[2] * q[2]);
+    out[0] = x;
+    out[1] = y;
+    out[2] = z;
 }
 
 vqf_real_t VQF::norm(const vqf_real_t vec[], size_t N)
 {
     vqf_real_t s = 0;
-    for(size_t i = 0; i < N; i++) {
-        s += vec[i]*vec[i];
+    for (size_t i = 0; i < N; i++)
+    {
+        s += vec[i] * vec[i];
     }
     return std::sqrt(s);
 }
@@ -1059,20 +1168,26 @@ vqf_real_t VQF::norm(const vqf_real_t vec[], size_t N)
 void VQF::normalize(vqf_real_t vec[], size_t N)
 {
     vqf_real_t n = norm(vec, N);
-    if (n < EPS) {
+    if (n < EPS)
+    {
         return;
     }
-    for(size_t i = 0; i < N; i++) {
+    for (size_t i = 0; i < N; i++)
+    {
         vec[i] /= n;
     }
 }
 
 void VQF::clip(vqf_real_t vec[], size_t N, vqf_real_t min, vqf_real_t max)
 {
-    for(size_t i = 0; i < N; i++) {
-        if (vec[i] < min) {
+    for (size_t i = 0; i < N; i++)
+    {
+        if (vec[i] < min)
+        {
             vec[i] = min;
-        } else if (vec[i] > max) {
+        }
+        else if (vec[i] > max)
+        {
             vec[i] = max;
         }
     }
@@ -1081,12 +1196,17 @@ void VQF::clip(vqf_real_t vec[], size_t N, vqf_real_t min, vqf_real_t max)
 vqf_real_t VQF::gainFromTau(vqf_real_t tau, vqf_real_t Ts)
 {
     assert(Ts > 0);
-    if (tau < vqf_real_t(0.0)) {
+    if (tau < vqf_real_t(0.0))
+    {
         return 0; // k=0 for negative tau (disable update)
-    } else if (tau == vqf_real_t(0.0)) {
+    }
+    else if (tau == vqf_real_t(0.0))
+    {
         return 1; // k=1 for tau=0
-    } else {
-        return 1 - std::exp(-Ts/tau);  // fc = 1/(2*pi*tau)
+    }
+    else
+    {
+        return 1 - std::exp(-Ts / tau); // fc = 1/(2*pi*tau)
     }
 }
 
@@ -1097,7 +1217,8 @@ void VQF::filterCoeffs(vqf_real_t tau, vqf_real_t Ts, double outB[3], double out
 
     // disable filter and use direct passthrough when tau < Ts/2 to avoid instability
     // (this corresponds to fc exceeding 90% of the Nyquist frequency)
-    if (tau < Ts/2) {
+    if (tau < Ts / 2)
+    {
         outB[0] = 1;
         outB[1] = 0;
         outB[2] = 0;
@@ -1107,36 +1228,38 @@ void VQF::filterCoeffs(vqf_real_t tau, vqf_real_t Ts, double outB[3], double out
     }
 
     // second order Butterworth filter based on https://stackoverflow.com/a/52764064
-    double fc = (SQRT2 / (2.0*PI))/double(tau); // time constant of dampened, non-oscillating part of step response
-    double C = std::tan(PI*fc*double(Ts));
-    double D = C*C + std::sqrt(2)*C + 1;
-    double b0 = C*C/D;
+    double fc = (SQRT2 / (2.0 * PI)) / double(tau); // time constant of dampened, non-oscillating part of step response
+    double C = std::tan(PI * fc * double(Ts));
+    double D = C * C + std::sqrt(2) * C + 1;
+    double b0 = C * C / D;
     outB[0] = b0;
-    outB[1] = 2*b0;
+    outB[1] = 2 * b0;
     outB[2] = b0;
     // a0 = 1.0
-    outA[0] = 2*(C*C-1)/D; // a1
-    outA[1] = (1-std::sqrt(2)*C+C*C)/D; // a2
+    outA[0] = 2 * (C * C - 1) / D;                // a1
+    outA[1] = (1 - std::sqrt(2) * C + C * C) / D; // a2
 }
 
 void VQF::filterInitialState(vqf_real_t x0, const double b[3], const double a[2], double out[2])
 {
     // initial state for steady state (equivalent to scipy.signal.lfilter_zi, obtained by setting y=x=x0 in the filter
     // update equation)
-    out[0] = double(x0)*(1 - b[0]);
-    out[1] = double(x0)*(b[2] - a[1]);
+    out[0] = double(x0) * (1 - b[0]);
+    out[1] = double(x0) * (b[2] - a[1]);
 }
 
 void VQF::filterAdaptStateForCoeffChange(vqf_real_t last_y[], size_t N, const double b_old[3],
                                          const double a_old[2], const double b_new[3],
                                          const double a_new[2], double state[])
 {
-    if (std::isnan(state[0])) {
+    if (std::isnan(state[0]))
+    {
         return;
     }
-    for (size_t i = 0; i < N; i++) {
-        state[0+2*i] = state[0+2*i] + (b_old[0] - b_new[0])*double(last_y[i]);
-        state[1+2*i] = state[1+2*i] + (b_old[1] - b_new[1] - a_old[0] + a_new[0])*double(last_y[i]);
+    for (size_t i = 0; i < N; i++)
+    {
+        state[0 + 2 * i] = state[0 + 2 * i] + (b_old[0] - b_new[0]) * double(last_y[i]);
+        state[1 + 2 * i] = state[1 + 2 * i] + (b_old[1] - b_new[1] - a_old[0] + a_new[0]) * double(last_y[i]);
     }
 }
 
@@ -1144,41 +1267,48 @@ vqf_real_t VQF::filterStep(vqf_real_t x, const double b[3], const double a[2], d
 {
     // difference equations based on scipy.signal.lfilter documentation
     // assumes that a0 == 1.0
-    double y = b[0]*double(x) + state[0];
-    state[0] = b[1]*double(x) - a[0]*y + state[1];
-    state[1] = b[2]*double(x) - a[1]*y;
+    double y = b[0] * double(x) + state[0];
+    state[0] = b[1] * double(x) - a[0] * y + state[1];
+    state[1] = b[2] * double(x) - a[1] * y;
     return y;
 }
 
 void VQF::filterVec(const vqf_real_t x[], size_t N, vqf_real_t tau, vqf_real_t Ts, const double b[3],
                     const double a[2], double state[], vqf_real_t out[])
 {
-    assert(N>=2);
+    assert(N >= 2);
 
     // to avoid depending on a single sample, average the first samples (for duration tau)
     // and then use this average to calculate the filter initial state
-    if (std::isnan(state[0])) { // initialization phase
-        if (std::isnan(state[1])) { // first sample
+    if (std::isnan(state[0]))
+    { // initialization phase
+        if (std::isnan(state[1]))
+        {                 // first sample
             state[1] = 0; // state[1] is used to store the sample count
-            for(size_t i = 0; i < N; i++) {
-                state[2+i] = 0; // state[2+i] is used to store the sum
+            for (size_t i = 0; i < N; i++)
+            {
+                state[2 + i] = 0; // state[2+i] is used to store the sum
             }
         }
         state[1]++;
-        for (size_t i = 0; i < N; i++) {
-            state[2+i] += double(x[i]);
-            out[i] = state[2+i]/state[1];
+        for (size_t i = 0; i < N; i++)
+        {
+            state[2 + i] += double(x[i]);
+            out[i] = state[2 + i] / state[1];
         }
-        if (vqf_real_t(state[1])*Ts >= tau) {
-            for(size_t i = 0; i < N; i++) {
-               filterInitialState(out[i], b, a, state+2*i);
+        if (vqf_real_t(state[1]) * Ts >= tau)
+        {
+            for (size_t i = 0; i < N; i++)
+            {
+                filterInitialState(out[i], b, a, state + 2 * i);
             }
         }
         return;
     }
 
-    for (size_t i = 0; i < N; i++) {
-        out[i] = filterStep(x[i], b, a, state+2*i);
+    for (size_t i = 0; i < N; i++)
+    {
+        out[i] = filterStep(x[i], b, a, state + 2 * i);
     }
 }
 
@@ -1199,78 +1329,79 @@ void VQF::matrix3SetToScaledIdentity(vqf_real_t scale, vqf_real_t out[9])
 void VQF::matrix3Multiply(const vqf_real_t in1[9], const vqf_real_t in2[9], vqf_real_t out[9])
 {
     vqf_real_t tmp[9];
-    tmp[0] = in1[0]*in2[0] + in1[1]*in2[3] + in1[2]*in2[6];
-    tmp[1] = in1[0]*in2[1] + in1[1]*in2[4] + in1[2]*in2[7];
-    tmp[2] = in1[0]*in2[2] + in1[1]*in2[5] + in1[2]*in2[8];
-    tmp[3] = in1[3]*in2[0] + in1[4]*in2[3] + in1[5]*in2[6];
-    tmp[4] = in1[3]*in2[1] + in1[4]*in2[4] + in1[5]*in2[7];
-    tmp[5] = in1[3]*in2[2] + in1[4]*in2[5] + in1[5]*in2[8];
-    tmp[6] = in1[6]*in2[0] + in1[7]*in2[3] + in1[8]*in2[6];
-    tmp[7] = in1[6]*in2[1] + in1[7]*in2[4] + in1[8]*in2[7];
-    tmp[8] = in1[6]*in2[2] + in1[7]*in2[5] + in1[8]*in2[8];
-    std::copy(tmp, tmp+9, out);
+    tmp[0] = in1[0] * in2[0] + in1[1] * in2[3] + in1[2] * in2[6];
+    tmp[1] = in1[0] * in2[1] + in1[1] * in2[4] + in1[2] * in2[7];
+    tmp[2] = in1[0] * in2[2] + in1[1] * in2[5] + in1[2] * in2[8];
+    tmp[3] = in1[3] * in2[0] + in1[4] * in2[3] + in1[5] * in2[6];
+    tmp[4] = in1[3] * in2[1] + in1[4] * in2[4] + in1[5] * in2[7];
+    tmp[5] = in1[3] * in2[2] + in1[4] * in2[5] + in1[5] * in2[8];
+    tmp[6] = in1[6] * in2[0] + in1[7] * in2[3] + in1[8] * in2[6];
+    tmp[7] = in1[6] * in2[1] + in1[7] * in2[4] + in1[8] * in2[7];
+    tmp[8] = in1[6] * in2[2] + in1[7] * in2[5] + in1[8] * in2[8];
+    std::copy(tmp, tmp + 9, out);
 }
 
 void VQF::matrix3MultiplyTpsFirst(const vqf_real_t in1[9], const vqf_real_t in2[9], vqf_real_t out[9])
 {
     vqf_real_t tmp[9];
-    tmp[0] = in1[0]*in2[0] + in1[3]*in2[3] + in1[6]*in2[6];
-    tmp[1] = in1[0]*in2[1] + in1[3]*in2[4] + in1[6]*in2[7];
-    tmp[2] = in1[0]*in2[2] + in1[3]*in2[5] + in1[6]*in2[8];
-    tmp[3] = in1[1]*in2[0] + in1[4]*in2[3] + in1[7]*in2[6];
-    tmp[4] = in1[1]*in2[1] + in1[4]*in2[4] + in1[7]*in2[7];
-    tmp[5] = in1[1]*in2[2] + in1[4]*in2[5] + in1[7]*in2[8];
-    tmp[6] = in1[2]*in2[0] + in1[5]*in2[3] + in1[8]*in2[6];
-    tmp[7] = in1[2]*in2[1] + in1[5]*in2[4] + in1[8]*in2[7];
-    tmp[8] = in1[2]*in2[2] + in1[5]*in2[5] + in1[8]*in2[8];
-    std::copy(tmp, tmp+9, out);
+    tmp[0] = in1[0] * in2[0] + in1[3] * in2[3] + in1[6] * in2[6];
+    tmp[1] = in1[0] * in2[1] + in1[3] * in2[4] + in1[6] * in2[7];
+    tmp[2] = in1[0] * in2[2] + in1[3] * in2[5] + in1[6] * in2[8];
+    tmp[3] = in1[1] * in2[0] + in1[4] * in2[3] + in1[7] * in2[6];
+    tmp[4] = in1[1] * in2[1] + in1[4] * in2[4] + in1[7] * in2[7];
+    tmp[5] = in1[1] * in2[2] + in1[4] * in2[5] + in1[7] * in2[8];
+    tmp[6] = in1[2] * in2[0] + in1[5] * in2[3] + in1[8] * in2[6];
+    tmp[7] = in1[2] * in2[1] + in1[5] * in2[4] + in1[8] * in2[7];
+    tmp[8] = in1[2] * in2[2] + in1[5] * in2[5] + in1[8] * in2[8];
+    std::copy(tmp, tmp + 9, out);
 }
 
 void VQF::matrix3MultiplyTpsSecond(const vqf_real_t in1[9], const vqf_real_t in2[9], vqf_real_t out[9])
 {
     vqf_real_t tmp[9];
-    tmp[0] = in1[0]*in2[0] + in1[1]*in2[1] + in1[2]*in2[2];
-    tmp[1] = in1[0]*in2[3] + in1[1]*in2[4] + in1[2]*in2[5];
-    tmp[2] = in1[0]*in2[6] + in1[1]*in2[7] + in1[2]*in2[8];
-    tmp[3] = in1[3]*in2[0] + in1[4]*in2[1] + in1[5]*in2[2];
-    tmp[4] = in1[3]*in2[3] + in1[4]*in2[4] + in1[5]*in2[5];
-    tmp[5] = in1[3]*in2[6] + in1[4]*in2[7] + in1[5]*in2[8];
-    tmp[6] = in1[6]*in2[0] + in1[7]*in2[1] + in1[8]*in2[2];
-    tmp[7] = in1[6]*in2[3] + in1[7]*in2[4] + in1[8]*in2[5];
-    tmp[8] = in1[6]*in2[6] + in1[7]*in2[7] + in1[8]*in2[8];
-    std::copy(tmp, tmp+9, out);
+    tmp[0] = in1[0] * in2[0] + in1[1] * in2[1] + in1[2] * in2[2];
+    tmp[1] = in1[0] * in2[3] + in1[1] * in2[4] + in1[2] * in2[5];
+    tmp[2] = in1[0] * in2[6] + in1[1] * in2[7] + in1[2] * in2[8];
+    tmp[3] = in1[3] * in2[0] + in1[4] * in2[1] + in1[5] * in2[2];
+    tmp[4] = in1[3] * in2[3] + in1[4] * in2[4] + in1[5] * in2[5];
+    tmp[5] = in1[3] * in2[6] + in1[4] * in2[7] + in1[5] * in2[8];
+    tmp[6] = in1[6] * in2[0] + in1[7] * in2[1] + in1[8] * in2[2];
+    tmp[7] = in1[6] * in2[3] + in1[7] * in2[4] + in1[8] * in2[5];
+    tmp[8] = in1[6] * in2[6] + in1[7] * in2[7] + in1[8] * in2[8];
+    std::copy(tmp, tmp + 9, out);
 }
 
 bool VQF::matrix3Inv(const vqf_real_t in[9], vqf_real_t out[9])
 {
     // in = [a b c; d e f; g h i]
-    double A = double(in[4]*in[8] - in[5]*in[7]); // (e*i - f*h)
-    double D = double(in[2]*in[7] - in[1]*in[8]); // -(b*i - c*h)
-    double G = double(in[1]*in[5] - in[2]*in[4]); // (b*f - c*e)
-    double B = double(in[5]*in[6] - in[3]*in[8]); // -(d*i - f*g)
-    double E = double(in[0]*in[8] - in[2]*in[6]); // (a*i - c*g)
-    double H = double(in[2]*in[3] - in[0]*in[5]); // -(a*f - c*d)
-    double C = double(in[3]*in[7] - in[4]*in[6]); // (d*h - e*g)
-    double F = double(in[1]*in[6] - in[0]*in[7]); // -(a*h - b*g)
-    double I = double(in[0]*in[4] - in[1]*in[3]); // (a*e - b*d)
+    double A = double(in[4] * in[8] - in[5] * in[7]); // (e*i - f*h)
+    double D = double(in[2] * in[7] - in[1] * in[8]); // -(b*i - c*h)
+    double G = double(in[1] * in[5] - in[2] * in[4]); // (b*f - c*e)
+    double B = double(in[5] * in[6] - in[3] * in[8]); // -(d*i - f*g)
+    double E = double(in[0] * in[8] - in[2] * in[6]); // (a*i - c*g)
+    double H = double(in[2] * in[3] - in[0] * in[5]); // -(a*f - c*d)
+    double C = double(in[3] * in[7] - in[4] * in[6]); // (d*h - e*g)
+    double F = double(in[1] * in[6] - in[0] * in[7]); // -(a*h - b*g)
+    double I = double(in[0] * in[4] - in[1] * in[3]); // (a*e - b*d)
 
-    double det = double(in[0])*A + double(in[1])*B + double(in[2])*C; // a*A + b*B + c*C;
+    double det = double(in[0]) * A + double(in[1]) * B + double(in[2]) * C; // a*A + b*B + c*C;
 
-    if (det >= double(-EPS) && det <= double(EPS)) {
-        std::fill(out, out+9, 0);
+    if (det >= double(-EPS) && det <= double(EPS))
+    {
+        std::fill(out, out + 9, 0);
         return false;
     }
 
     // out = [A D G; B E H; C F I]/det
-    out[0] = A/det;
-    out[1] = D/det;
-    out[2] = G/det;
-    out[3] = B/det;
-    out[4] = E/det;
-    out[5] = H/det;
-    out[6] = C/det;
-    out[7] = F/det;
-    out[8] = I/det;
+    out[0] = A / det;
+    out[1] = D / det;
+    out[2] = G / det;
+    out[3] = B / det;
+    out[4] = E / det;
+    out[5] = H / det;
+    out[6] = C / det;
+    out[7] = F / det;
+    out[8] = I / det;
 
     return true;
 }
@@ -1281,54 +1412,61 @@ void VQF::setup()
     assert(coeffs.gyrTs > 0);
     assert(coeffs.accTs > 0);
     assert(coeffs.magTs > 0);
-    
+
     accEarthRef[0] = 0;
     accEarthRef[1] = 0;
     accEarthRef[2] = 1;
-    
+
     state.step_quat[0] = 1;
     state.step_quat[1] = 0;
     state.step_quat[2] = 0;
     state.step_quat[3] = 0;
 
-    if (!stepStaticDetector) {
-        stepStaticDetector = std::make_shared<StaticDetector>(params.staticAccThreshold, params.staticGyrThreshold, 
-            params.staticMagThreshold, params.staticWindowSize, params.staticBlockForwardSteps);
-
-    } else {
+    if (!stepStaticDetector)
+    {
+        stepStaticDetector = std::make_shared<StaticDetector>(params.staticAccThreshold, params.staticGyrThreshold,
+                                                              params.staticMagThreshold, params.staticWindowSize, params.staticBlockForwardSteps);
+    }
+    else
+    {
         stepStaticDetector->reset();
     }
-    if (!stepGyroBias) {
+    if (!stepGyroBias)
+    {
         stepGyroBias = std::make_shared<GyroBias>(500, true);
-    } else {
+    }
+    else
+    {
         stepGyroBias->reset();
     }
-
 
     filterCoeffs(params.tauAcc, coeffs.accTs, coeffs.accLpB, coeffs.accLpA);
 
     coeffs.kMag = gainFromTau(params.tauMag, coeffs.magTs);
 
-    coeffs.biasP0 = square(params.biasSigmaInit*vqf_real_t(100.0));
+    coeffs.biasP0 = square(params.biasSigmaInit * vqf_real_t(100.0));
     // the system noise increases the variance from 0 to (0.1 °/s)^2 in biasForgettingTime seconds
-    coeffs.biasV = square(0.1*100.0)*coeffs.accTs/params.biasForgettingTime;
+    coeffs.biasV = square(0.1 * 100.0) * coeffs.accTs / params.biasForgettingTime;
 
 #ifndef VQF_NO_MOTION_BIAS_ESTIMATION
-    vqf_real_t pMotion = square(params.biasSigmaMotion*vqf_real_t(100.0));
+    vqf_real_t pMotion = square(params.biasSigmaMotion * vqf_real_t(100.0));
     coeffs.biasMotionW = square(pMotion) / coeffs.biasV + pMotion;
     coeffs.biasVerticalW = coeffs.biasMotionW / (std::max)(params.biasVerticalForgettingFactor, vqf_real_t(1e-10));
 #endif
 
-    vqf_real_t pRest = square(params.biasSigmaRest*vqf_real_t(100.0));
+    vqf_real_t pRest = square(params.biasSigmaRest * vqf_real_t(100.0));
     coeffs.biasRestW = square(pRest) / coeffs.biasV + pRest;
 
     filterCoeffs(params.restFilterTau, coeffs.gyrTs, coeffs.restGyrLpB, coeffs.restGyrLpA);
     filterCoeffs(params.restFilterTau, coeffs.accTs, coeffs.restAccLpB, coeffs.restAccLpA);
 
     coeffs.kMagRef = gainFromTau(params.magRefTau, coeffs.magTs);
-    if (params.magCurrentTau > 0) {
+    if (params.magCurrentTau > 0)
+    {
         filterCoeffs(params.magCurrentTau, coeffs.magTs, coeffs.magNormDipLpB, coeffs.magNormDipLpA);
-    } else {
+    }
+    else
+    {
         std::fill(coeffs.magNormDipLpB, coeffs.magNormDipLpB + 3, NaN);
         std::fill(coeffs.magNormDipLpA, coeffs.magNormDipLpA + 2, NaN);
     }

@@ -46,7 +46,7 @@ cdef extern from 'cpp/vqf.hpp':
         vqf_real_t magRejectionFactor
         bool useAccStep
         bool useJustaFilter
-        
+        bool useAccLp
         vqf_real_t staticAccThreshold
         vqf_real_t staticGyrThreshold
         vqf_real_t staticMagThreshold
@@ -261,7 +261,7 @@ cdef class VQF:
                   biasSigmaRest=None, restMinT=None, restFilterTau=None, restThGyr=None, restThAcc=None,
                   magCurrentTau=None, magRefTau=None, magNormTh=None, magDipTh=None, magNewTime=None,
                   magNewFirstTime=None, magNewMinGyr=None, magMinUndisturbedTime=None, magMaxRejectionTime=None,
-                  magRejectionFactor=None, useJustaFilter=None,
+                  magRejectionFactor=None, useJustaFilter=None, useAccLp=None,
                 staticAccThreshold=None, staticGyrThreshold=None, staticMagThreshold=None,
                 staticWindowSize=None, staticBlockForwardSteps=None):
         cdef VQFParams params
@@ -317,6 +317,8 @@ cdef class VQF:
             params.magRejectionFactor = magRejectionFactor        
         if useJustaFilter is not None:
             params.useJustaFilter = useJustaFilter
+        if useAccLp is not None:
+            params.useAccLp = useAccLp
         if staticAccThreshold is not None:
             params.staticAccThreshold = staticAccThreshold
         if staticGyrThreshold is not None:
@@ -338,7 +340,7 @@ cdef class VQF:
                  biasSigmaRest=None, restMinT=None, restFilterTau=None, restThGyr=None, restThAcc=None,
                  magCurrentTau=None, magRefTau=None, magNormTh=None, magDipTh=None, magNewTime=None,
                  magNewFirstTime=None, magNewMinGyr=None, magMinUndisturbedTime=None, magMaxRejectionTime=None,
-                 magRejectionFactor=None, useJustaFilter=None,
+                 magRejectionFactor=None, useJustaFilter=None, useAccLp=None,
                  staticAccThreshold=None, staticGyrThreshold=None, staticMagThreshold=None,
                  staticWindowSize=None, staticBlockForwardSteps=None):
 
