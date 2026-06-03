@@ -107,6 +107,7 @@ class VQFState(TypedDict):
 
 
 class VQFBatchResults9D(TypedDict):
+    quat3D: np.ndarray
     quat6D: np.ndarray
     quat9D: np.ndarray
     delta: np.ndarray
@@ -117,6 +118,7 @@ class VQFBatchResults9D(TypedDict):
 
 
 class VQFBatchResults6D(TypedDict):
+    quat3D: np.ndarray
     quat6D: np.ndarray
     bias: np.ndarray
     biasSigma: np.ndarray

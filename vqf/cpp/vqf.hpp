@@ -610,6 +610,8 @@ struct VQFCoefficients
      * @brief Denominator coefficients of the low-pass filter for the current magnetic norm and dip.
      */
     double magNormDipLpA[2];
+
+    vqf_real_t justaMagStepsize;
 };
 
 /**
@@ -715,6 +717,9 @@ public:
      *
      * @param acc accelerometer measurement in m/s²
      */
+
+    void updateAccMagJusta(const vqf_real_t acc[3], const vqf_real_t mag[3]);
+
     void updateAcc(const vqf_real_t acc[3]);
     /**
      * @brief Performs magnetometer update step.
@@ -733,13 +738,15 @@ public:
      * @param acc accelerometer measurement in m/s²
      */
     void update(const vqf_real_t gyr[3], const vqf_real_t acc[3]);
+    void update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_real_t mag[3]);
     /**
      * @brief Performs filter update step for one sample (with magnetometer measurement).
      * @param gyr gyroscope measurement in rad/s
      * @param acc accelerometer measurement in m/s²
      * @param mag magnetometer measurement in arbitrary units
+     * @param justa flag to indicate whether to use the Justa update method
      */
-    void update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_real_t mag[3]);
+    void update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_real_t mag[3], bool justa);
 
     bool normalize3d(const vqf_real_t in[3], vqf_real_t out[3]);
 
@@ -786,7 +793,7 @@ public:
      * @param outMagDist output buffer for the magnetic disturbance state (N elements, can be a null pointer)
      */
     void updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_real_t mag[], size_t N,
-                     vqf_real_t out6D[], vqf_real_t out9D[], vqf_real_t outDelta[], vqf_real_t outBias[],
+                     vqf_real_t out3D[], vqf_real_t out6D[], vqf_real_t out9D[], vqf_real_t outDelta[], vqf_real_t outBias[],
                      vqf_real_t outBiasSigma[], bool outRest[], bool outMagDist[]);
 
     void setStepQuat(vqf_real_t newstate[4]);
@@ -808,6 +815,7 @@ public:
      * \f$^{\mathcal{S}_i}_{\mathcal{E}}\mathbf{q}\f$.
      * @param out output array for the quaternion
      */
+    void getQuat9D(vqf_real_t out[4], bool justa) const;
     void getQuat9D(vqf_real_t out[4]) const;
     /**
      * @brief Returns the heading difference \f$\delta\f$ between \f$\mathcal{E}_i\f$ and \f$\mathcal{E}\f$.
@@ -979,6 +987,14 @@ public:
      * @param N number of elements
      */
     static void normalize(vqf_real_t vec[], size_t N);
+
+        /**
+     * @brief Normalizes a vector in-place.
+     * @param vec pointer to an array of N elements that will be normalized
+     * @param N number of elements
+     */
+    static void normalizeJJ(vqf_real_t vec[], size_t N);
+    
     /**
      * @brief Clips a vector in-place.
      * @param vec pointer to an array of N elements that will be clipped

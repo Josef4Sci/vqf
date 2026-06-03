@@ -118,7 +118,7 @@ cdef extern from 'cpp/vqf.hpp':
         void update(const vqf_real_t gyr[3], const vqf_real_t acc[3])
         void update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_real_t mag[3])
         void updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_real_t mag[], size_t N,
-                         vqf_real_t out6D[], vqf_real_t out9D[], vqf_real_t outDelta[], vqf_real_t outBias[],
+                         vqf_real_t out3D[], vqf_real_t out6D[], vqf_real_t out9D[], vqf_real_t outDelta[], vqf_real_t outBias[],
                          vqf_real_t outBiasSigma[], bool outRest[], bool outMagDist[])
 
         void setStepQuat(vqf_real_t newstate[4])
@@ -447,6 +447,7 @@ cdef class VQF:
         assert gyr.shape[1] == 3
         assert acc.shape[1] == 3
 
+        cdef np.ndarray[vqf_real_t, ndim=2, mode='c'] out3D = np.zeros(shape=(N, 4), dtype=vqf_real)
         cdef np.ndarray[vqf_real_t, ndim=2, mode='c'] out6D = np.zeros(shape=(N, 4), dtype=vqf_real)
         cdef np.ndarray[vqf_real_t, ndim=2, mode='c'] out9D
         cdef np.ndarray[vqf_real_t, ndim=1, mode='c'] outDelta
@@ -458,23 +459,24 @@ cdef class VQF:
         if mag is not None:
             assert mag.shape[0] == N
             assert mag.shape[1] == 3
+            out3D = np.zeros(shape=(N, 4), dtype=vqf_real)
             out9D = np.zeros(shape=(N, 4), dtype=vqf_real)
             outDelta = np.zeros(shape=(N,), dtype=vqf_real)
             outMagDist = np.zeros(shape=(N,), dtype=np.bool_)
             self.c_obj.updateBatch(<vqf_real_t*> np.PyArray_DATA(gyr), <vqf_real_t*> np.PyArray_DATA(acc),
                                    <vqf_real_t*> np.PyArray_DATA(mag), N,
-                                   <vqf_real_t*> np.PyArray_DATA(out6D), <vqf_real_t*> np.PyArray_DATA(out9D),
+                                   <vqf_real_t*> np.PyArray_DATA(out3D), <vqf_real_t*> np.PyArray_DATA(out6D), <vqf_real_t*> np.PyArray_DATA(out9D),
                                    <vqf_real_t *> np.PyArray_DATA(outDelta),
                                    <vqf_real_t*> np.PyArray_DATA(outBias), <vqf_real_t*> np.PyArray_DATA(outBiasSigma),
                                    <bool*> np.PyArray_DATA(outRest), <bool*> np.PyArray_DATA(outMagDist))
-            return dict(quat6D=out6D, quat9D=out9D, delta=outDelta, bias=outBias, biasSigma=outBiasSigma,
+            return dict(quat3D=out3D, quat6D=out6D, quat9D=out9D, delta=outDelta, bias=outBias, biasSigma=outBiasSigma,
                         restDetected=outRest, magDistDetected=outMagDist)
         else:
             self.c_obj.updateBatch(<vqf_real_t*> np.PyArray_DATA(gyr), <vqf_real_t*> np.PyArray_DATA(acc), NULL, N,
-                                   <vqf_real_t*> np.PyArray_DATA(out6D), NULL, NULL,
+                                   <vqf_real_t*> np.PyArray_DATA(out3D), <vqf_real_t*> np.PyArray_DATA(out6D), NULL, NULL,
                                    <vqf_real_t*> np.PyArray_DATA(outBias), <vqf_real_t *> np.PyArray_DATA(outBiasSigma),
                                    <bool*> np.PyArray_DATA(outRest), NULL)
-            return dict(quat6D=out6D, bias=outBias, biasSigma=outBiasSigma, restDetected=outRest)
+            return dict(quat3D=out3D, quat6D=out6D, bias=outBias, biasSigma=outBiasSigma, restDetected=outRest)
 
     @cython.boundscheck(False)  # turn off bounds-checking for entire function
     @cython.wraparound(False)  # turn off negative index wrapping for entire function
@@ -500,6 +502,7 @@ cdef class VQF:
             assert mag.shape[0] == N
             assert mag.shape[1] == 3
 
+        cdef np.ndarray[vqf_real_t, ndim=2, mode='c'] out3D = np.empty(shape=(N, 4), dtype=vqf_real)
         cdef np.ndarray[vqf_real_t, ndim=2, mode='c'] out6D = np.empty(shape=(N, 4), dtype=vqf_real)
         cdef np.ndarray[vqf_real_t, ndim=2, mode='c'] out9D = np.empty(shape=(N, 4), dtype=vqf_real)
 
@@ -547,6 +550,7 @@ cdef class VQF:
                 self.c_obj.update((<vqf_real_t*> np.PyArray_DATA(gyr))+3*i,
                                   (<vqf_real_t*> np.PyArray_DATA(acc))+3*i)
 
+            self.c_obj.getQuat3D((<vqf_real_t*> np.PyArray_DATA(out3D))+4*i)
             self.c_obj.getQuat6D((<vqf_real_t*> np.PyArray_DATA(out6D))+4*i)
             self.c_obj.getQuat9D((<vqf_real_t*> np.PyArray_DATA(out9D))+4*i)
 
@@ -588,6 +592,7 @@ cdef class VQF:
             memcpy(<double*> np.PyArray_DATA(magNormDipLpState)+2*2*i, state.magNormDipLpState, 2*2*sizeof(double))
 
         return dict(
+            quat3D=out3D,
             quat6D=out6D,
             quat9D=out9D,
             gyrQuat=gyrQuat,
