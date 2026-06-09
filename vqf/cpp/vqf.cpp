@@ -90,6 +90,83 @@ void VQF::updateGyr(const vqf_real_t gyr[3])
     }
 }
 
+// q_dot = 0.5 * q ⊗ [0, w]  (kinematic equation for unit quaternion)
+static inline void quatDerivative(const vqf_real_t q[4], const vqf_real_t w[3], vqf_real_t q_dot[4])
+{
+    q_dot[0] = vqf_real_t(0.5) * (-q[1]*w[0] - q[2]*w[1] - q[3]*w[2]);
+    q_dot[1] = vqf_real_t(0.5) * ( q[0]*w[0] + q[2]*w[2] - q[3]*w[1]);
+    q_dot[2] = vqf_real_t(0.5) * ( q[0]*w[1] - q[1]*w[2] + q[3]*w[0]);
+    q_dot[3] = vqf_real_t(0.5) * ( q[0]*w[2] + q[1]*w[1] - q[2]*w[0]);
+}
+
+void VQF::updateGyrFast(const vqf_real_t gyr[3])
+{
+    // rest detection
+    if (params.restBiasEstEnabled || params.magDistRejectionEnabled)
+    {
+        filterVec(gyr, 3, params.restFilterTau, coeffs.gyrTs, coeffs.restGyrLpB, coeffs.restGyrLpA,
+                  state.restGyrLpState, state.restLastGyrLp);
+
+        state.restLastSquaredDeviations[0] = square(gyr[0] - state.restLastGyrLp[0]) + square(gyr[1] - state.restLastGyrLp[1]) + square(gyr[2] - state.restLastGyrLp[2]);
+
+        vqf_real_t biasClip = params.biasClip * vqf_real_t(PI / 180.0);
+        if (state.restLastSquaredDeviations[0] >= square(params.restThGyr * vqf_real_t(PI / 180.0)) || std::fabs(state.restLastGyrLp[0]) > biasClip || std::fabs(state.restLastGyrLp[1]) > biasClip || std::fabs(state.restLastGyrLp[2]) > biasClip)
+        {
+            state.restT = 0.0;
+            state.restDetected = false;
+        }
+    }
+
+    // remove estimated gyro bias
+    vqf_real_t gyrNoBias[3] = {gyr[0] - state.bias[0], gyr[1] - state.bias[1], gyr[2] - state.bias[2]};
+
+    // gyroscope integration step
+    const vqf_real_t dt = coeffs.gyrTs;
+    if (params.gyroIntegrationMethod == 1)
+    {
+        // Euler: q_new = q + q_dot * dt
+        vqf_real_t q_dot[4];
+        quatDerivative(state.gyrQuat, gyrNoBias, q_dot);
+        state.gyrQuat[0] += q_dot[0] * dt;
+        state.gyrQuat[1] += q_dot[1] * dt;
+        state.gyrQuat[2] += q_dot[2] * dt;
+        state.gyrQuat[3] += q_dot[3] * dt;
+        normalize(state.gyrQuat, 4);
+    }
+    else if (params.gyroIntegrationMethod == 2)
+    {
+        // Midpoint (RK2): evaluate derivative at midpoint q_mid
+        vqf_real_t k1[4];
+        quatDerivative(state.gyrQuat, gyrNoBias, k1);
+        vqf_real_t q_mid[4] = {
+            state.gyrQuat[0] + k1[0] * (dt * vqf_real_t(0.5)),
+            state.gyrQuat[1] + k1[1] * (dt * vqf_real_t(0.5)),
+            state.gyrQuat[2] + k1[2] * (dt * vqf_real_t(0.5)),
+            state.gyrQuat[3] + k1[3] * (dt * vqf_real_t(0.5))
+        };
+        normalize(q_mid, 4);
+        vqf_real_t k2[4];
+        quatDerivative(q_mid, gyrNoBias, k2);
+        state.gyrQuat[0] += k2[0] * dt;
+        state.gyrQuat[1] += k2[1] * dt;
+        state.gyrQuat[2] += k2[2] * dt;
+        state.gyrQuat[3] += k2[3] * dt;
+        normalize(state.gyrQuat, 4);
+    }
+    else
+    {
+        // default: angle-axis with cos(θ/2) ≈ 1 small-angle approximation
+        vqf_real_t gyrNorm = norm(gyrNoBias, 3);
+        if (gyrNorm > EPS)
+        {
+            vqf_real_t s = dt / vqf_real_t(2.0);
+            vqf_real_t gyrStepQuat[4] = {vqf_real_t(1.0), s * gyrNoBias[0], s * gyrNoBias[1], s * gyrNoBias[2]};
+            quatMultiply(state.gyrQuat, gyrStepQuat, state.gyrQuat);
+            normalize(state.gyrQuat, 4);
+        }
+    }
+}
+
 void VQF::updateAccMagJusta(const vqf_real_t acc[3], const vqf_real_t mag[3])
 {
     // ignore [0 0 0] samples
@@ -135,7 +212,7 @@ void VQF::updateAccMagJusta(const vqf_real_t acc[3], const vqf_real_t mag[3])
 
     // transform to 6D earth frame and normalize
     quatRotate(state.accQuat, state.lastAccLp, accEarth);
-    normalizeJJ(accEarth, 3);
+    normalize(accEarth, 3);
 
     // Only the sign of the x component in the rotated magnetometer frame is needed here.
     // Reuse the existing quaternion multiply helper to keep the code consistent.
@@ -151,16 +228,8 @@ void VQF::updateAccMagJusta(const vqf_real_t acc[3], const vqf_real_t mag[3])
     vqf_real_t accCorrQuat[4]{1, vqf_real_t(0.5) * accEarth[1], vqf_real_t(-0.5) * accEarth[0], m_step_dir};
 
     // replaces: quatMultiply(accCorrQuat, state.accQuat, state.accQuat);
-    const vqf_real_t e1 = vqf_real_t(0.5) * accEarth[1];
-    const vqf_real_t e2 = vqf_real_t(-0.5) * accEarth[0];
-    const vqf_real_t e3 = m_step_dir;
-    const vqf_real_t* q = state.accQuat;  // alias before overwrite
-    state.accQuat[0]=q[0]         - e1*q[1] - e2*q[2] - e3*q[3];
-    state.accQuat[1]=q[1] + e1*q[0]          + e2*q[3] - e3*q[2];
-    state.accQuat[2]=q[2] - e1*q[3] + e2*q[0]          + e3*q[1];
-    state.accQuat[3]=q[3] + e1*q[2] - e2*q[1] + e3*q[0];
-
-    normalizeJJ(state.accQuat, 4);
+    quatMultiply(accCorrQuat, state.accQuat, state.accQuat);
+    normalize(state.accQuat, 4);
 }
 
 void VQF::updateAcc(const vqf_real_t acc[3])
@@ -508,7 +577,7 @@ void VQF::updateMag(const vqf_real_t mag[3])
 
 void VQF::update(const vqf_real_t gyr[3], const vqf_real_t acc[3])
 {
-    updateGyr(gyr);
+    updateGyrFast(gyr);
     updateAcc(acc);
 }
 
@@ -519,7 +588,7 @@ void VQF::update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_rea
 
 void VQF::update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_real_t mag[3], bool justa)
 {
-    updateGyr(gyr);
+    updateGyrFast(gyr);
     if (justa)
     {
         updateAccMagJusta(acc, mag);

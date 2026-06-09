@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 # distutils: language = c++
+# distutils: sources = vqf/cpp/vqf.cpp vqf/cpp/offline_vqf.cpp
 # cython: language_level=3
 # cython: embedsignature=True
 # distutils: undef_macros = NDEBUG
@@ -52,7 +53,8 @@ cdef extern from 'cpp/vqf.hpp':
         vqf_real_t staticMagThreshold
         size_t staticWindowSize
         size_t staticBlockForwardSteps
-        
+        int gyroIntegrationMethod
+
 
     cdef struct VQFState:
         vqf_real_t gyrQuat[4]
@@ -263,7 +265,8 @@ cdef class VQF:
                   magNewFirstTime=None, magNewMinGyr=None, magMinUndisturbedTime=None, magMaxRejectionTime=None,
                   magRejectionFactor=None, useJustaFilter=None, useAccLp=None,
                 staticAccThreshold=None, staticGyrThreshold=None, staticMagThreshold=None,
-                staticWindowSize=None, staticBlockForwardSteps=None):
+                staticWindowSize=None, staticBlockForwardSteps=None,
+                gyroIntegrationMethod=None):
         cdef VQFParams params
         if tauAcc is not None:
             params.tauAcc = tauAcc
@@ -329,6 +332,8 @@ cdef class VQF:
             params.staticWindowSize = staticWindowSize
         if staticBlockForwardSteps is not None:
             params.staticBlockForwardSteps = staticBlockForwardSteps
+        if gyroIntegrationMethod is not None:
+            params.gyroIntegrationMethod = gyroIntegrationMethod
 
         self.c_obj = new C_VQF(params, <vqf_real_t> gyrTs, <vqf_real_t> accTs, <vqf_real_t> magTs)
 
@@ -342,7 +347,8 @@ cdef class VQF:
                  magNewFirstTime=None, magNewMinGyr=None, magMinUndisturbedTime=None, magMaxRejectionTime=None,
                  magRejectionFactor=None, useJustaFilter=None, useAccLp=None,
                  staticAccThreshold=None, staticGyrThreshold=None, staticMagThreshold=None,
-                 staticWindowSize=None, staticBlockForwardSteps=None):
+                 staticWindowSize=None, staticBlockForwardSteps=None,
+                 gyroIntegrationMethod=None):
 
         """
         :param gyrTs: sampling time of the gyroscope measurements in seconds

@@ -324,6 +324,8 @@ struct VQFParams
     vqf_real_t staticMagThreshold= vqf_real_t(3.0);
     size_t staticWindowSize=3;
     size_t staticBlockForwardSteps=500;
+    // 0 = angle-axis approx (default), 1 = Euler, 2 = Midpoint (RK2)
+    int gyroIntegrationMethod = 0;
 };
 
 /**
@@ -707,6 +709,8 @@ public:
      * @param gyr gyroscope measurement in rad/s
      */
     void updateGyr(const vqf_real_t gyr[3]);
+
+    void updateGyrFast(const vqf_real_t gyr[3]);
     /**
      * @brief Performs accelerometer update step.
      *

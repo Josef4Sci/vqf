@@ -23,6 +23,9 @@ ext_modules = cythonize([
 
 for m in ext_modules:
     m.include_dirs.insert(0, np.get_include())
+    # The .pyx files add undef_macros=NDEBUG which re-enables assertions (-UNDEBUG).
+    # Remove it so NDEBUG stays defined (assertions off, no D9025 warning).
+    m.undef_macros = [u for u in m.undef_macros if u != 'NDEBUG']
 
 setup(
     name='vqf',
