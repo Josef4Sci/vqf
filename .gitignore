@@ -19,3 +19,5 @@ CMakeLists.txt.user
 /vqf/basicvqf.cpp
 /vqf/vqf.cpython-*.so
 /vqf/basicvqf.cpython-*.so
+vqf/basicvqf.cp313-win_amd64.pyd
+vqf/vqf.cp313-win_amd64.pyd
