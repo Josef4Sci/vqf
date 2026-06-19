@@ -33,7 +33,7 @@ VQFParams::VQFParams()
       biasSigmaMotion(0.1), biasVerticalForgettingFactor(0.0001)
 #endif
       ,
-      biasSigmaRest(0.03), restMinT(1.5), restFilterTau(0.5), restThGyr(2.0), restThAcc(0.5), magCurrentTau(0.05), magRefTau(20.0), magNormTh(0.1), magDipTh(10.0), magNewTime(20.0), magNewFirstTime(5.0), magNewMinGyr(20.0), magMinUndisturbedTime(0.5), magMaxRejectionTime(60.0), magRejectionFactor(2.0)
+      biasSigmaRest(0.03), restMinT(1.5), restFilterTau(0.5), restThGyr(2.0), restThAcc(0.5), magCurrentTau(0.05), magRefTau(20.0), magNormTh(0.1), magDipTh(10.0), magNewTime(20.0), magNewFirstTime(5.0), magNewMinGyr(20.0), magMinUndisturbedTime(0.5), magMaxRejectionTime(60.0), magRejectionFactor(2.0), filterType(FILTER_VQF)
 {
 }
 
@@ -166,8 +166,39 @@ void VQF::updateGyrFast(const vqf_real_t gyr[3])
         }
     }
 }
+void VQF::updateAccMagJustaOrig(const vqf_real_t acc[3], const vqf_real_t mag[3]){
+    if (acc[0] == vqf_real_t(0.0) && acc[1] == vqf_real_t(0.0) && acc[2] == vqf_real_t(0.0))
+    {
+        return;
+    }
 
-void VQF::updateAccMagJusta(const vqf_real_t acc[3], const vqf_real_t mag[3])
+    // ignore [0 0 0] samples
+    if (mag[0] == vqf_real_t(0.0) && mag[1] == vqf_real_t(0.0) && mag[2] == vqf_real_t(0.0))
+    {
+        return;
+    }
+
+    vqf_real_t accEarth[3];
+    quatRotate(state.gyrQuat, acc, accEarth);
+
+    // vqf_real_t magEarth[3];
+    // quatRotate(state.gyrQuat, mag, magEarth);
+
+    const vqf_real_t magX = (1 - 2 * state.gyrQuat[2] * state.gyrQuat[2] - 2 * state.gyrQuat[3] * state.gyrQuat[3]) * mag[0] + 2 * mag[1] * (state.gyrQuat[2] * state.gyrQuat[1] - state.gyrQuat[0] * state.gyrQuat[3]) + 2 * mag[2] * (state.gyrQuat[0] * state.gyrQuat[2] + state.gyrQuat[3] * state.gyrQuat[1]);
+
+    const vqf_real_t m_step_dir = std::copysign(coeffs.justaMagStepsize, magX);
+    const vqf_real_t a_step_dir_x = std::copysign(coeffs.justaAccStepsize, accEarth[1]);
+    const vqf_real_t a_step_dir_y = std::copysign(coeffs.justaAccStepsize, accEarth[0]);
+
+    // inclination correction
+    vqf_real_t accCorrQuat[4]{1,  a_step_dir_x, -a_step_dir_y, m_step_dir};
+
+    // replaces: quatMultiply(accCorrQuat, state.accQuat, state.accQuat);
+    quatMultiply(accCorrQuat, state.gyrQuat, state.gyrQuat);
+    normalize(state.gyrQuat, 4);
+}
+
+void VQF::updateAccMagFastVQF(const vqf_real_t acc[3], const vqf_real_t mag[3])
 {
     // ignore [0 0 0] samples
     if (acc[0] == vqf_real_t(0.0) && acc[1] == vqf_real_t(0.0) && acc[2] == vqf_real_t(0.0))
@@ -221,11 +252,10 @@ void VQF::updateAccMagJusta(const vqf_real_t acc[3], const vqf_real_t mag[3])
 
     const vqf_real_t magX = (1 - 2 * accGyrQuat[2] * accGyrQuat[2] - 2 * accGyrQuat[3] * accGyrQuat[3]) * mag[0] + 2 * mag[1] * (accGyrQuat[2] * accGyrQuat[1] - accGyrQuat[0] * accGyrQuat[3]) + 2 * mag[2] * (accGyrQuat[0] * accGyrQuat[2] + accGyrQuat[3] * accGyrQuat[1]);
 
-    const vqf_real_t mstep = params.tauMag * vqf_real_t(0.000215351);
-    const vqf_real_t m_step_dir = std::copysign(mstep, magX);// (magX < 0) ? -mstep : mstep;
+    const vqf_real_t m_step_dir = std::copysign(coeffs.justaMagStepsize, magX);
 
     // inclination correction
-    vqf_real_t accCorrQuat[4]{1, vqf_real_t(0.5) * accEarth[1], vqf_real_t(-0.5) * accEarth[0], m_step_dir};
+    vqf_real_t accCorrQuat[4]{1, vqf_real_t(0.5) * accEarth[1], vqf_real_t(0.5) * -accEarth[0], m_step_dir};
 
     // replaces: quatMultiply(accCorrQuat, state.accQuat, state.accQuat);
     quatMultiply(accCorrQuat, state.accQuat, state.accQuat);
@@ -583,21 +613,42 @@ void VQF::update(const vqf_real_t gyr[3], const vqf_real_t acc[3])
 
 void VQF::update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_real_t mag[3])
 {
-    update(gyr, acc, mag, params.useJustaFilter);
+    update(gyr, acc, mag, params.filterType);
 }
 
-void VQF::update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_real_t mag[3], bool justa)
+void VQF::update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_real_t mag[3], FilterType filterType)
 {
+    if (filterType == FILTER_MADGWICK)
+    {
+        
+        madgwickFilter.update(
+            (float)gyr[0], (float)gyr[1], (float)gyr[2],
+            (float)acc[0], (float)acc[1], (float)acc[2],
+            (float)mag[0], (float)mag[1], (float)mag[2]
+        );
+        float ow, ox, oy, oz;
+        madgwickFilter.getQuaternion(ow, ox, oy, oz);
+        state.gyrQuat[0] = ow;
+        state.gyrQuat[1] = ox;
+        state.gyrQuat[2] = oy;
+        state.gyrQuat[3] = oz;
+        return;
+    }
+
     updateGyrFast(gyr);
-    if (justa)
+    if (filterType == FILTER_FAST_VQF)
     {
-        updateAccMagJusta(acc, mag);
+        updateAccMagFastVQF(acc, mag);
+        return;
     }
-    else
-    {
-        updateAcc(acc);
-        updateMag(mag);
+
+    if(filterType == FILTER_JUSTA_ORIG){
+        updateAccMagJustaOrig(acc, mag);
+        return;
     }
+
+    updateAcc(acc);
+    updateMag(mag);    
 }
 
 inline bool VQF::normalize3d(const vqf_real_t in[3], vqf_real_t out[3])
@@ -731,11 +782,8 @@ static bool quatFromTwoVectors(const vqf_real_t from[3], const vqf_real_t to[3],
     return true;
 }
 
-void VQF::initFromAccMag(const vqf_real_t acc[3], const vqf_real_t mag[3], vqf_real_t quat_out[4])
+void VQF::initFromAccMag(const vqf_real_t acc[3], const vqf_real_t mag[3],const vqf_real_t gravityRef[3], const vqf_real_t magRef[3], vqf_real_t quat_out[4])
 {
-    const vqf_real_t gravityRef[3] = {vqf_real_t(0.0), vqf_real_t(0.0), vqf_real_t(1.0)};
-    const vqf_real_t magRef[3] = {vqf_real_t(0.0), vqf_real_t(1.0), vqf_real_t(0.0)};
-
     vqf_real_t accNorm[3];
     vqf_real_t magNorm[3];
     if (!normalize3d(acc, accNorm) || !normalize3d(mag, magNorm))
@@ -794,17 +842,33 @@ void VQF::updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_
                       vqf_real_t out3D[], vqf_real_t out6D[], vqf_real_t out9D[], vqf_real_t outDelta[], vqf_real_t outBias[],
                       vqf_real_t outBiasSigma[], bool outRest[], bool outMagDist[])
 {
-    if (params.useJustaFilter)
+    if (params.filterType == FILTER_FAST_VQF || params.filterType == FILTER_JUSTA_ORIG)
     {
-        initFromAccMag(acc, mag, state.accQuat);
+        vqf_real_t gravityRef[3] = {vqf_real_t(0.0), vqf_real_t(0.0), vqf_real_t(1.0)};
+        vqf_real_t magRef[3] = {vqf_real_t(0.0), vqf_real_t(1.0), vqf_real_t(0.0)};
+        
+        if(params.filterType == FILTER_FAST_VQF){
+            initFromAccMag(acc, mag, gravityRef, magRef, state.accQuat);
+        }else{
+            initFromAccMag(acc, mag, gravityRef, magRef, state.gyrQuat);
+        }
     }
+
+    if(params.filterType == FILTER_MADGWICK){
+        vqf_real_t gravityRef[3] = {vqf_real_t(0.0), vqf_real_t(0.0), vqf_real_t(1.0)};
+        vqf_real_t magRef[3] = {vqf_real_t(1.0), vqf_real_t(0.0), vqf_real_t(0.0)};
+        vqf_real_t initMad[4];
+        initFromAccMag(acc, mag, gravityRef, magRef, initMad);
+        madgwickFilter.setQuaternion(initMad[0], initMad[1], initMad[2], initMad[3]);
+    }
+
     for (size_t i = 0; i < N; i++)
     {
-        if (!params.useAccLp)
+        if (!(params.filterType == FILTER_SKIP)) // for time measurement baseline
         {
             if (mag)
             {
-                update(gyr + 3 * i, acc + 3 * i, mag + 3 * i, params.useJustaFilter);
+                update(gyr + 3 * i, acc + 3 * i, mag + 3 * i, params.filterType);
             }
             else
             {
@@ -822,7 +886,7 @@ void VQF::updateBatch(const vqf_real_t gyr[], const vqf_real_t acc[], const vqf_
         }
         if (out9D)
         {
-            getQuat9D(out9D + 4 * i, params.useJustaFilter);
+            getQuat9D(out9D + 4 * i, params.filterType);
         }
         if (outDelta)
         {
@@ -862,18 +926,31 @@ void VQF::getQuat6D(vqf_real_t out[4]) const
     quatMultiply(state.accQuat, state.gyrQuat, out);
 }
 
-void VQF::getQuat9D(vqf_real_t out[4], bool justa) const
-{
-    quatMultiply(state.accQuat, state.gyrQuat, out);
-    if (!justa)
+void VQF::getQuat9D(vqf_real_t out[4], FilterType filterType) const
+{   
+    if (filterType == FILTER_MADGWICK|| filterType == FILTER_JUSTA_ORIG)
     {
+        std::copy(state.gyrQuat, state.gyrQuat + 4, out);
+        return; 
+    }
+    
+    if (filterType == FILTER_FAST_VQF)
+    {
+        quatMultiply(state.accQuat, state.gyrQuat, out);
+        return;
+    }
+
+    if (filterType == FILTER_BASIC_VQF || filterType == FILTER_VQF)
+    {
+        quatMultiply(state.accQuat, state.gyrQuat, out);
         quatApplyDelta(out, state.delta, out);
+        return;
     }
 }
 
 void VQF::getQuat9D(vqf_real_t out[4]) const
 {
-    getQuat9D(out, params.useJustaFilter);
+    getQuat9D(out, params.filterType);
 }
 
 vqf_real_t VQF::getDelta() const
@@ -1026,12 +1103,14 @@ void VQF::setTauAcc(vqf_real_t tauAcc)
 
     std::copy(newB, newB + 3, coeffs.accLpB);
     std::copy(newA, newA + 2, coeffs.accLpA);
+    coeffs.justaAccStepsize = params.tauAcc * vqf_real_t(0.053143448) * coeffs.gyrTs;
 }
 
 void VQF::setTauMag(vqf_real_t tauMag)
 {
     params.tauMag = tauMag;
     coeffs.kMag = gainFromTau(params.tauMag, coeffs.magTs);
+    coeffs.justaMagStepsize = params.tauMag * vqf_real_t(0.0215351) * coeffs.gyrTs;
 }
 
 void VQF::setRestDetectionThresholds(vqf_real_t thGyr, vqf_real_t thAcc)
@@ -1062,6 +1141,7 @@ void VQF::setState(const VQFState &state)
 
 void VQF::resetState()
 {
+    madgwickFilter.reset();
     quatSetToIdentity(state.gyrQuat);
     quatSetToIdentity(state.accQuat);
     state.delta = 0.0;
@@ -1472,11 +1552,14 @@ void VQF::setup()
         stepGyroBias->reset();
     }
 
+    madgwickFilter.begin(1.0f / (float)coeffs.gyrTs, params.tauAcc);
+
     filterCoeffs(params.tauAcc, coeffs.accTs, coeffs.accLpB, coeffs.accLpA);
 
     coeffs.kMag = gainFromTau(params.tauMag, coeffs.magTs);
 
-    coeffs.justaMagStepsize = params.tauMag * 0.000215351;
+    coeffs.justaMagStepsize = params.tauMag * vqf_real_t(0.0215351) * coeffs.gyrTs;
+    coeffs.justaAccStepsize = params.tauAcc * vqf_real_t(0.053143448) * coeffs.gyrTs;
 
     coeffs.biasP0 = square(params.biasSigmaInit * vqf_real_t(100.0));
     // the system noise increases the variance from 0 to (0.1 °/s)^2 in biasForgettingTime seconds

@@ -32,7 +32,7 @@ class VQFParams(TypedDict):
     magMinUndisturbedTime: float
     magMaxRejectionTime: float
     magRejectionFactor: float
-    useJustaFilter: bool
+    filterType: int
     staticAccThreshold: float
     staticGyrThreshold: float
     staticMagThreshold: float
@@ -196,7 +196,7 @@ class VQF:
         magMinUndisturbedTime: float | None = None,
         magMaxRejectionTime: float | None = None,
         magRejectionFactor: float | None = None,
-        useJustaFilter: bool | None = None,
+        filterType: int | None = None,
         staticAccThreshold: float | None = None,
         staticGyrThreshold: float | None = None,
         staticMagThreshold: float | None = None,

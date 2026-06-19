@@ -9,6 +9,7 @@
 #include <memory>
 #include <assert.h>
 #include <vector>
+#include "MadgwickAHRS.hpp"
 
 // #define VQF_SINGLE_PRECISION
 // #define VQF_NO_MOTION_BIAS_ESTIMATION
@@ -74,6 +75,16 @@ public:
  * the accelerometer and magnetometer measurements, respectively. The remaining parameters influence bias estimation
  * and magnetometer rejection.
  */
+enum FilterType {
+    FILTER_VQF       = 0,
+    FILTER_BASIC_VQF = 1,
+    FILTER_FAST_VQF  = 2,
+    FILTER_MAHONY     = 3,
+    FILTER_MADGWICK   = 4,
+    FILTER_SKIP       = 5,
+    FILTER_JUSTA_ORIG = 6
+};
+
 struct VQFParams
 {
     /**
@@ -311,7 +322,7 @@ struct VQFParams
      */
     vqf_real_t magRejectionFactor;
 
-    bool useJustaFilter;
+    FilterType filterType;
 
     bool useAccStep;
     
@@ -614,6 +625,7 @@ struct VQFCoefficients
     double magNormDipLpA[2];
 
     vqf_real_t justaMagStepsize;
+    vqf_real_t justaAccStepsize;
 };
 
 /**
@@ -722,7 +734,9 @@ public:
      * @param acc accelerometer measurement in m/s²
      */
 
-    void updateAccMagJusta(const vqf_real_t acc[3], const vqf_real_t mag[3]);
+    void updateAccMagFastVQF(const vqf_real_t acc[3], const vqf_real_t mag[3]);
+
+    void updateAccMagJustaOrig(const vqf_real_t acc[3], const vqf_real_t mag[3]);
 
     void updateAcc(const vqf_real_t acc[3]);
     /**
@@ -748,15 +762,15 @@ public:
      * @param gyr gyroscope measurement in rad/s
      * @param acc accelerometer measurement in m/s²
      * @param mag magnetometer measurement in arbitrary units
-     * @param justa flag to indicate whether to use the Justa update method
+     * @param filterType flag to indicate which filter type to use
      */
-    void update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_real_t mag[3], bool justa);
+    void update(const vqf_real_t gyr[3], const vqf_real_t acc[3], const vqf_real_t mag[3], FilterType filterType);
 
     bool normalize3d(const vqf_real_t in[3], vqf_real_t out[3]);
 
     void integrateEulerStep(const vqf_real_t q[4], const vqf_real_t gyr[3], vqf_real_t dt, vqf_real_t out[4]);
 
-    void initFromAccMag(const vqf_real_t acc[3], const vqf_real_t mag[3], vqf_real_t quat_out[4]);
+    void initFromAccMag(const vqf_real_t acc[3], const vqf_real_t mag[3],const vqf_real_t gravityRef[3], const vqf_real_t magRef[3], vqf_real_t quat_out[4]);
 
     void update_step(const vqf_real_t quaternion[4], const vqf_real_t gyroscope[3],
          const vqf_real_t accelerometer[3], const vqf_real_t magnetometer[3], vqf_real_t dt, 
@@ -818,8 +832,9 @@ public:
      * @brief Returns the 9D (with magnetometers) orientation quaternion
      * \f$^{\mathcal{S}_i}_{\mathcal{E}}\mathbf{q}\f$.
      * @param out output array for the quaternion
+     * @param filterType flag to indicate which filter type to use
      */
-    void getQuat9D(vqf_real_t out[4], bool justa) const;
+    void getQuat9D(vqf_real_t out[4],  FilterType filterType) const;
     void getQuat9D(vqf_real_t out[4]) const;
     /**
      * @brief Returns the heading difference \f$\delta\f$ between \f$\mathcal{E}_i\f$ and \f$\mathcal{E}\f$.
@@ -1156,6 +1171,7 @@ protected:
     vqf_real_t accEarthRef[3];
     std::shared_ptr<class StaticDetector> stepStaticDetector;
     std::shared_ptr<class GyroBias> stepGyroBias;
+    Madgwick madgwickFilter;
 };
 
 #endif // VQF_HPP
